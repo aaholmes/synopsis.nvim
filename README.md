@@ -59,8 +59,8 @@ The default model, GPT-6 Luna, needs an OpenAI API key in `OPENAI_API_KEY`.
 ## Before anything is sent
 
 The first time you preview a file without a summary in a repo, the pane asks whether that
-repo's files may be sent to the model provider. Alt-y allows it and Alt-n says no; the
-answer is remembered for that repo. Cached summaries are always shown, and nothing is sent until
+repo's files may be sent to the model provider. Ctrl-a allows it and Ctrl-o turns synopses off;
+the answer is remembered for that repo. Cached summaries are always shown, and nothing is sent until
 you answer. `:SynopsisAllow` and `:SynopsisDeny` change the answer for the current buffer's repo.
 
 For a local model server, where nothing leaves your machine, `setup { consent = 'always' }`
@@ -72,8 +72,8 @@ In the picker's prompt, in Insert and Normal mode:
 
 | Key | Action |
 |---|---|
-| Alt-d / Alt-u | Scroll the summary down / up half a page (the mouse wheel works too) |
-| Alt-y / Alt-n | Allow this repo's files to be sent / never send them |
+| Ctrl-e / Ctrl-y | Scroll the synopsis down / up half a page (the mouse wheel works too) |
+| Ctrl-a / Ctrl-o | Allow this repo's files to be sent / turn synopses off for this repo |
 
 Telescope's own keys scroll the preview (`<C-u>` / `<C-d>`) and the results (`<PageUp>` /
 `<PageDown>`).
@@ -119,7 +119,7 @@ require('synopsis').setup {
   max_concurrent = 3,
   height = 0.6,           -- below 1: fraction of the left column; otherwise lines
   -- In the picker's prompt; false for none.
-  keymaps = { scroll_up = '<M-u>', scroll_down = '<M-d>', allow = '<M-y>', deny = '<M-n>' },
+  keymaps = { scroll_up = '<C-y>', scroll_down = '<C-e>', allow = '<C-a>', deny = '<C-o>' },
 }
 ```
 

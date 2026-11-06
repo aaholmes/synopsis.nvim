@@ -29,10 +29,11 @@ local defaults = {
   -- Height of the summary pane: below 1, a fraction of the left column's rows (the results get
   -- the rest); otherwise a number of lines.
   height = 0.6,
-  -- Keys in the picker's prompt; false for none. scroll_* move the summary half a page (Telescope
+  -- Keys in the picker's prompt; false for none. scroll_* move the synopsis half a page (Telescope
   -- uses <C-u>/<C-d> for the preview and <PageUp>/<PageDown> for the results); allow / deny
-  -- answer whether this repo's files may be sent.
-  keymaps = { scroll_up = '<M-u>', scroll_down = '<M-d>', allow = '<M-y>', deny = '<M-n>' },
+  -- answer whether this repo's files may be sent. Ctrl keys rather than Alt keys, because many
+  -- macOS terminals send Option as a character, not as Alt.
+  keymaps = { scroll_up = '<C-y>', scroll_down = '<C-e>', allow = '<C-a>', deny = '<C-o>' },
 }
 
 M.config = vim.deepcopy(defaults)

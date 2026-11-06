@@ -83,8 +83,8 @@ H.check('skipped and failed views give their reason', function()
 end)
 
 H.check('the question names the repo, the host and the keys', function()
-  local t = joined(render.layout({ kind = 'ask', text = '/home/me/proj', host = 'api.openai.com' }, 80, { keymaps = { allow = '<M-y>', deny = '<M-n>' } }))
-  for _, want in ipairs { '/home/me/proj', 'api.openai.com', 'Alt-y', 'Alt-n' } do
+  local t = joined(render.layout({ kind = 'ask', text = '/home/me/proj', host = 'api.openai.com' }, 80, { keymaps = require('synopsis').config.keymaps }))
+  for _, want in ipairs { '/home/me/proj', 'api.openai.com', 'Ctrl-a', 'Ctrl-o' } do
     H.eq(t:find(want, 1, true) ~= nil, true, 'mentions ' .. want .. ': ' .. t)
   end
 end)

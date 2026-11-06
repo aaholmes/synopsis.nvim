@@ -95,12 +95,12 @@ end)
 
 local function topline() return vim.fn.getwininfo(find('synopsis').win)[1].topline end
 
-H.check('Alt-d and Alt-u scroll the summary from the prompt, in Insert and Normal mode', function()
+H.check('Ctrl-e and Ctrl-y scroll the synopsis from the prompt, in Insert and Normal mode', function()
   H.eq(topline(), 1, 'starts at the top')
   for _, mode in ipairs { 'i', 'n' } do
-    local down = vim.fn.maparg('<M-d>', mode, false, true)
-    local up = vim.fn.maparg('<M-u>', mode, false, true)
-    H.eq(down.buffer, 1, mode .. ' <M-d> is mapped in the prompt')
+    local down = vim.fn.maparg('<C-e>', mode, false, true)
+    local up = vim.fn.maparg('<C-y>', mode, false, true)
+    H.eq(down.buffer, 1, mode .. ' <C-e> is mapped in the prompt')
     down.callback()
     H.eq(topline() > 1, true, mode .. ' scrolled down')
     up.callback()
@@ -118,15 +118,15 @@ H.check('the pane can take focus, so the mouse wheel scrolls it', function()
   H.eq(vim.api.nvim_win_get_config(find('synopsis').win).focusable, true, 'focusable')
 end)
 
-H.check('Alt-y in the prompt allows the repo and Alt-n turns summaries off', function()
+H.check('Ctrl-a in the prompt allows the repo and Ctrl-o turns synopses off', function()
   local consent = require 'synopsis.consent'
   for _, mode in ipairs { 'i', 'n' } do
-    H.eq(vim.fn.maparg('<M-y>', mode, false, true).buffer, 1, mode .. ' <M-y> mapped')
-    H.eq(vim.fn.maparg('<M-n>', mode, false, true).buffer, 1, mode .. ' <M-n> mapped')
+    H.eq(vim.fn.maparg('<C-a>', mode, false, true).buffer, 1, mode .. ' <C-a> mapped')
+    H.eq(vim.fn.maparg('<C-o>', mode, false, true).buffer, 1, mode .. ' <C-o> mapped')
   end
-  vim.fn.maparg('<M-n>', 'i', false, true).callback()
+  vim.fn.maparg('<C-o>', 'i', false, true).callback()
   H.eq(consent.get(root), 'deny', 'denied')
-  vim.fn.maparg('<M-y>', 'i', false, true).callback()
+  vim.fn.maparg('<C-a>', 'i', false, true).callback()
   H.eq(consent.get(root), 'allow', 'allowed')
 end)
 
