@@ -60,7 +60,7 @@ function M.build(opts)
   end
   local ctx = repo_context(opts.root)
   return {
-    { role = 'system', content = fill(template 'system', { background = read(opts.background) or '' }) },
+    { role = 'system', content = fill(template 'system', { background = read(opts.background) or '(No background given: write for a general programmer.)' }) },
     { role = 'user', content = fill(template 'file', { readme = ctx.readme, files = ctx.files, path = opts.relpath, content = content }) },
   }
 end
