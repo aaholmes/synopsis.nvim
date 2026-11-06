@@ -81,13 +81,32 @@ local MESSAGES = {
   outdated = '_(Outdated: the file or prompt changed since this was written; updating if you stay on this file.)_',
 }
 
+---A summary laid out for scanning: one blank line before each note and between paragraphs,
+---whatever spacing the model gave. A line that does not start a note or follow a blank line
+---continues the one above, so wrapped sentences and notes stay together.
+local function spaced(text)
+  local out = {}
+  local after_blank = true
+  for _, line in ipairs(vim.split(text, '\n', { plain = true })) do
+    if vim.trim(line) == '' then
+      after_blank = true
+    else
+      local starts_block = after_blank or line:match '^[-*] ' ~= nil
+      if starts_block and #out > 0 then table.insert(out, '') end
+      table.insert(out, line)
+      after_blank = false
+    end
+  end
+  return table.concat(out, '\n')
+end
+
 ---Lines to show for a core view.
 function M.lines(view)
   local text
   if view.kind == 'summary' then
-    text = view.text
+    text = spaced(view.text)
   elseif view.kind == 'outdated' or (view.kind == 'pending' and view.text) then
-    text = view.text .. '\n\n' .. MESSAGES[view.kind == 'pending' and 'pending' or 'outdated']
+    text = spaced(view.text) .. '\n\n' .. MESSAGES[view.kind == 'pending' and 'pending' or 'outdated']
   elseif view.kind == 'skipped' then
     text = '_Not summarized: ' .. view.text .. '._'
   elseif view.kind == 'error' then

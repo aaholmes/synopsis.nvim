@@ -5,6 +5,8 @@ a pane above the results list. A summary is one sentence on what the file does a
 plus up to four notes: non-obvious behaviour, gotchas, and the other files it works with. It is
 written by a large language model (LLM) for a reader who knows what the project is for but not
 its details. If you keep a background file, the wording is pitched at your level.
+Summaries are written in ASD-STE100 Simplified Technical English (short sentences, one fact
+each, common words), with a blank line between items, so they can be read in a few seconds.
 
 A summary that already exists appears immediately. A file without one gets one once you have
 stayed on it for a second, usually a few seconds later. Summaries are cached outside the repo and

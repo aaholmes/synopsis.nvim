@@ -25,6 +25,12 @@ H.check('the system turn includes the reader background', function()
   H.eq(build()[1].content:find('Lua, Neovim plugins', 1, true) ~= nil, true, 'background text')
 end)
 
+H.check('the system turn asks for ASD-STE100 Simplified Technical English and blank lines between items', function()
+  local sys = build()[1].content
+  H.eq(sys:find('ASD-STE100', 1, true) ~= nil, true, 'names the standard')
+  H.eq(sys:find('blank line', 1, true) ~= nil, true, 'asks for blank lines')
+end)
+
 H.check('a missing background file is not an error', function()
   H.eq(type(build { background = '/no/such/file.md' }[1].content), 'string', 'system content')
 end)
