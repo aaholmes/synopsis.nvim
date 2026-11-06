@@ -43,22 +43,46 @@ local function blocks(text)
   return out
 end
 
----Words with their highlight: text inside **...** becomes SynopsisLabel, without the asterisks.
-local function words(text, hl)
-  local out, pos = {}, 1
-  local function add(segment, group)
-    for w in segment:gmatch '%S+' do
-      table.insert(out, { text = w, hl = group })
-    end
-  end
+---Split text into pieces { text, hl }: text inside **...** gets SynopsisLabel and text inside
+---`...` SynopsisCode, without the markers. A label may hold code ("**Works with `x`:**").
+local function pieces(text, hl, out)
+  out = out or {}
+  local pos = 1
   while true do
     local s, e, inner = text:find('%*%*(.-)%*%*', pos)
+    local cs, ce, cinner = text:find('`([^`]+)`', pos)
+    local code = cs and (not s or cs < s)
+    if code then s, e, inner = cs, ce, cinner end
     if not s then break end
-    add(text:sub(pos, s - 1), hl)
-    add(inner, 'SynopsisLabel')
+    table.insert(out, { text = text:sub(pos, s - 1), hl = hl })
+    if code then
+      table.insert(out, { text = inner, hl = 'SynopsisCode' })
+    else
+      pieces(inner, 'SynopsisLabel', out)
+    end
     pos = e + 1
   end
-  add(text:sub(pos), hl)
+  table.insert(out, { text = text:sub(pos), hl = hl })
+  return out
+end
+
+---Words to lay out, each a list of parts { text, hl }. Pieces with no space between them stay in
+---one word ("`a.lua`,"), so wrapping never splits punctuation from the code before it.
+local function words(text, hl)
+  local out, after_space = {}, true
+  for _, piece in ipairs(pieces(text, hl)) do
+    if piece.text ~= '' then
+      for space, w in piece.text:gmatch '(%s*)(%S+)' do
+        if space == '' and not after_space and #out > 0 then
+          table.insert(out[#out], { text = w, hl = piece.hl })
+        else
+          table.insert(out, { { text = w, hl = piece.hl } })
+        end
+        after_space = false
+      end
+      after_space = piece.text:match '%s$' ~= nil
+    end
+  end
   return out
 end
 
@@ -95,8 +119,9 @@ function M.layout(view, width)
       table.insert(marks, { row = #lines, col = #PAD, end_col = #PAD + #'•', hl = 'SynopsisBullet' })
     end
     local limit = avail - (item.bullet and 2 or 0)
-    for _, w in ipairs(words(item.text, item.hl)) do
-      local wlen = vim.fn.strdisplaywidth(w.text)
+    for _, parts in ipairs(words(item.text, item.hl)) do
+      local wlen = 0
+      for _, part in ipairs(parts) do wlen = wlen + vim.fn.strdisplaywidth(part.text) end
       if used > 0 and used + 1 + wlen > limit then
         table.insert(lines, line)
         line, used = cont, 0
@@ -105,8 +130,10 @@ function M.layout(view, width)
         line = line .. ' '
         used = used + 1
       end
-      if w.hl then table.insert(marks, { row = #lines, col = #line, end_col = #line + #w.text, hl = w.hl }) end
-      line = line .. w.text
+      for _, part in ipairs(parts) do
+        if part.hl then table.insert(marks, { row = #lines, col = #line, end_col = #line + #part.text, hl = part.hl }) end
+        line = line .. part.text
+      end
       used = used + wlen
     end
     table.insert(lines, line)
@@ -117,6 +144,7 @@ end
 
 vim.api.nvim_set_hl(0, 'SynopsisLabel', { default = true, link = '@markup.strong' })
 vim.api.nvim_set_hl(0, 'SynopsisBullet', { default = true, link = '@markup.list' })
+vim.api.nvim_set_hl(0, 'SynopsisCode', { default = true, link = '@markup.raw' })
 vim.api.nvim_set_hl(0, 'SynopsisMessage', { default = true, link = 'Comment' })
 
 return M

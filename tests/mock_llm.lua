@@ -42,7 +42,10 @@ function M.start(replies, opts)
       local function send()
         state.open = state.open - 1
         if type(reply) == 'table' then return respond(client, reply.status, reply.body) end
-        respond(client, 200, vim.json.encode { id = 'mock', choices = { { index = 0, message = { role = 'assistant', content = reply } } } })
+        respond(client, 200, vim.json.encode {
+          id = 'mock', choices = { { index = 0, message = { role = 'assistant', content = reply } } },
+          usage = { prompt_tokens = 120, completion_tokens = 30, prompt_tokens_details = { cached_tokens = 64 } },
+        })
       end
       if opts.delay_ms then
         local t = assert(vim.uv.new_timer())

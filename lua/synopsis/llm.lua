@@ -3,7 +3,8 @@
 local M = {}
 
 ---Send `messages` using `cfg` ({ url, chat_path?, model, api_key_env, params?, timeout_ms? })
----and call `callback(err, text)` on the main loop with the reply text or an error message.
+---and call `callback(err, text, usage)` on the main loop with the reply text or an error
+---message. usage is { prompt_tokens, completion_tokens, cached_tokens } when the server reports it.
 function M.request(cfg, messages, callback)
   local done = vim.schedule_wrap(callback)
   local key
@@ -44,7 +45,13 @@ function M.request(cfg, messages, callback)
     local content = ok and type(json) == 'table' and json.choices and json.choices[1] and json.choices[1].message
       and json.choices[1].message.content
     if type(content) ~= 'string' then return done('unexpected reply: ' .. (text or ''):sub(1, 200)) end
-    done(nil, vim.trim(content))
+    local u = type(json.usage) == 'table' and json.usage or nil
+    local usage = u and {
+      prompt_tokens = u.prompt_tokens,
+      completion_tokens = u.completion_tokens,
+      cached_tokens = type(u.prompt_tokens_details) == 'table' and u.prompt_tokens_details.cached_tokens or nil,
+    }
+    done(nil, vim.trim(content), usage)
   end)
 end
 

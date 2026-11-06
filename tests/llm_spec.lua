@@ -15,7 +15,7 @@ end
 ---Run one request and wait for its callback.
 local function run(c)
   local got
-  llm.request(c, messages, function(err, text) got = { err = err, text = text } end)
+  llm.request(c, messages, function(err, text, usage) got = { err = err, text = text, usage = usage } end)
   vim.wait(6000, function() return got ~= nil end, 10)
   return got or {}
 end
@@ -33,6 +33,13 @@ H.check('sends the model, params and messages with the key, and returns the repl
   H.eq(req.body.reasoning_effort, 'none', 'param')
   H.eq(req.body.stream, false, 'not streamed')
   H.eq(vim.deep_equal(req.body.messages, messages), true, 'messages')
+end)
+
+H.check('the token counts the server reports are passed on', function()
+  local got = run(cfg(mock.start 'A.'))
+  H.eq(got.usage and got.usage.prompt_tokens, 120, 'prompt tokens')
+  H.eq(got.usage and got.usage.completion_tokens, 30, 'completion tokens')
+  H.eq(got.usage and got.usage.cached_tokens, 64, 'cached prompt tokens')
 end)
 
 H.check('an HTTP error becomes a readable error with the status and message', function()

@@ -11,8 +11,9 @@ Write in ASD-STE100 Simplified Technical English:
 
 Write, in this order, with a blank line between each item:
 
-1. One sentence that says what the file does. Begin with a verb, for example "Caches each
-   file's summary on disk." Do not begin with "This file", "This module", "Provides" or
+1. One sentence that says what the file does. Begin with a verb in the third person
+   ("Explains", not "Explain"; "Finds", not "Find"), for example "Caches each file's summary on
+   disk." The first word ends in "s", even when the file's own comments use commands. Do not begin with "This file", "This module", "Provides" or
    "Contains": the reader already knows it is a file.
 
 2. Zero to three notes, each a bullet that starts with "- " and then a bold label:
@@ -24,7 +25,8 @@ Write, in this order, with a blank line between each item:
    example a comment, a TODO, or unusual control flow. If there is nothing worth a note, write
    no notes. Do not add notes to fill space.
 
-Plain text with "- " bullets and "**" for the labels only. No headings, no code blocks, at
+Plain text with "- " bullets, "**" for the labels only, and backticks around paths and
+identifiers. No headings, no code blocks, at
 most 50 words in all. Pitch the words to this reader:
 
 ${background}

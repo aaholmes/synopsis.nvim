@@ -50,6 +50,18 @@ H.check('bold labels lose their asterisks and are highlighted', function()
   H.eq(table.concat(marks_with(r, 'SynopsisLabel'), ' '), 'Watch out:', 'highlighted words')
 end)
 
+H.check('code in backticks loses the backticks and is highlighted', function()
+  local r = out 'Records `docs/demo.gif` with `vhs`.'
+  H.eq(r.lines[2], '  Records docs/demo.gif with vhs.', 'text')
+  H.eq(table.concat(marks_with(r, 'SynopsisCode'), ' '), 'docs/demo.gif vhs', 'highlighted')
+end)
+
+H.check('code spans inside a bold label and punctuation after them are kept', function()
+  local r = out '- **Works with:** `init.lua`, `lua/x.lua`.'
+  H.eq(r.lines[2], '  • Works with: init.lua, lua/x.lua.', 'text')
+  H.eq(table.concat(marks_with(r, 'SynopsisCode'), ' '), 'init.lua lua/x.lua', 'code highlighted, punctuation not')
+end)
+
 H.check('an opening "This file provides" is cut to the verb', function()
   H.eq(out('This file provides a cache.').lines[2], '  Provides a cache.', 'file')
   H.eq(out('This module stores X.').lines[2], '  Stores X.', 'module')
