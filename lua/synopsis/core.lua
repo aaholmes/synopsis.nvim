@@ -62,7 +62,7 @@ function Core:check(path, rel)
     if pat:match(base) or pat:match(rel) then return 'excluded by the exclude setting' end
   end
   if stat.size > self.opts.max_bytes then
-    return string.format('too large to summarize (%d KB; the limit is %d KB)', math.ceil(stat.size / 1024), math.floor(self.opts.max_bytes / 1024))
+    return string.format('too large (%d KB; the limit is %d KB)', math.ceil(stat.size / 1024), math.floor(self.opts.max_bytes / 1024))
   end
   local text = read_file(path)
   if not text then return 'could not be read' end

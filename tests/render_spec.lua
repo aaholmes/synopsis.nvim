@@ -93,4 +93,19 @@ H.check('the off message says how to turn summaries on', function()
   H.eq(joined(render.layout({ kind = 'off' }, 80)):find(':SynopsisAllow', 1, true) ~= nil, true, 'command named')
 end)
 
+H.check('the pane calls what it shows a synopsis, never a summary', function()
+  local views = {
+    { kind = 'waiting' }, { kind = 'pending' }, { kind = 'outdated', text = 'Does A.' },
+    { kind = 'skipped', text = 'binary file' }, { kind = 'error', text = 'HTTP 500' },
+    { kind = 'ask', text = '/repo', host = 'api.openai.com' }, { kind = 'off' },
+  }
+  for _, v in ipairs(views) do
+    local t = joined(render.layout(v, 80))
+    H.eq(t:lower():find('summar', 1, true), nil, v.kind .. ' says summary: ' .. t)
+  end
+  for _, kind in ipairs { 'waiting', 'pending' } do
+    H.eq(joined(render.layout({ kind = kind }, 80)):find('synopsis', 1, true) ~= nil, true, kind .. ' says synopsis')
+  end
+end)
+
 H.finish()

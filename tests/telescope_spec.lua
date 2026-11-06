@@ -86,10 +86,10 @@ H.check('the pane shows the summary for the previewed file', function()
   H.eq((pane_text() or ''):find('Summary from the mock.', 1, true) ~= nil, true, 'pane text: ' .. tostring(pane_text()))
 end)
 
-H.check('the pane is titled Summary and is taller than the results under it', function()
+H.check('the pane is titled Synopsis and is taller than the results under it', function()
   local pane, results = find 'synopsis', find 'TelescopeResults'
   local title = vim.api.nvim_win_get_config(pane.win).title
-  H.eq(title and title[1] and vim.trim(title[1][1]), 'Summary', 'title')
+  H.eq(title and title[1] and vim.trim(title[1][1]), 'Synopsis', 'title')
   H.eq(pane.h - 2 > results.h, true, string.format('pane %d lines, results %d', pane.h - 2, results.h))
 end)
 

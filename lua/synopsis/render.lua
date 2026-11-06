@@ -8,9 +8,9 @@ local PAD = '  ' -- left and right margin, in columns
 local BULLET = '• '
 
 local MESSAGES = {
-  waiting = 'No summary yet. One is written if you stay on this file.',
-  pending = 'Writing a summary…',
-  outdated = 'Outdated: the file or prompt changed. A new summary is written if you stay on this file.',
+  waiting = 'No synopsis yet. One is written if you stay on this file.',
+  pending = 'Writing a synopsis…',
+  outdated = 'Outdated: the file or prompt changed. A new synopsis is written if you stay on this file.',
 }
 
 -- An opening like "This file provides" says nothing; cut it to "Provides". "is" and "was" are
@@ -108,18 +108,18 @@ function M.layout(view, width, opts)
     if view.text then add_text(cut_opener(view.text)) end
     add_message(MESSAGES[view.kind])
   elseif view.kind == 'ask' then
-    table.insert(items, { text = string.format('Send files from `%s` to %s to write summaries?', view.text, view.host or 'the model provider') })
+    table.insert(items, { text = string.format('Send files from `%s` to %s to write synopses?', view.text, view.host or 'the model provider') })
     local yes = keymaps.allow and key_name(keymaps.allow) or ':SynopsisAllow'
     local no = keymaps.deny and key_name(keymaps.deny) or ':SynopsisDeny'
     add_message(string.format('%s: yes, for this repo. %s: no.', yes, no))
     add_message 'A file is sent only after you stay on it for a second.'
   elseif view.kind == 'off' then
     if view.text then add_text(cut_opener(view.text)) end
-    add_message 'Summaries are off for this repo. :SynopsisAllow turns them on.'
+    add_message 'Synopses are off for this repo. :SynopsisAllow turns them on.'
   elseif view.kind == 'skipped' then
-    add_message('Not summarized: ' .. view.text .. '.')
+    add_message('No synopsis: ' .. view.text .. '.')
   elseif view.kind == 'error' then
-    add_message('Summary failed: ' .. view.text)
+    add_message('Synopsis failed: ' .. view.text)
   else
     add_message(MESSAGES[view.kind] or '')
   end

@@ -1,6 +1,9 @@
 # synopsis.nvim
 
-![Browsing files in Telescope: a cached summary appears immediately, then a new file's summary is written after a one-second pause on it](docs/demo.gif)
+![Browsing files in Telescope: a cached synopsis appears immediately, then a new file's synopsis is written after a one-second pause on it](docs/demo.gif)
+
+In the recording, `softmax.py` already has a synopsis, so it appears immediately; `related.lua`
+does not, so one is written after a one-second pause on the file.
 
 When you browse a codebase in Telescope, synopsis shows a short summary of the previewed file in
 a pane above the results list. A summary is one sentence on what the file does, plus up to three
@@ -136,7 +139,7 @@ The pane's colours come from these highlight groups:
 | `SynopsisLabel` | Bold labels such as "Watch out:" | `@markup.strong` |
 | `SynopsisCode` | File paths and identifiers | `@markup.raw` |
 | `SynopsisBullet` | The dot before each note | `@markup.list` |
-| `SynopsisMessage` | Status lines such as "Writing a summary…" | `Comment` |
+| `SynopsisMessage` | Status lines such as "Writing a synopsis…" | `Comment` |
 
 `:SynopsisClear` deletes the cached summaries for the current buffer's repo.
 

@@ -42,7 +42,7 @@ local function win_config(g)
     relative = 'editor', row = g.row, col = g.col, width = g.width, height = g.height,
     -- Focusable so the mouse wheel scrolls it; the prompt keeps the focus.
     style = 'minimal', border = 'rounded', focusable = true, zindex = 50,
-    title = ' Summary ', title_pos = 'center',
+    title = ' Synopsis ', title_pos = 'center',
   }
 end
 
@@ -113,10 +113,10 @@ function M.attach(core, keymaps)
       open_pane(picker)
       if first then
         local actions = {
-          scroll_down = { function() M.scroll(1) end, 'scroll the summary down' },
-          scroll_up = { function() M.scroll(-1) end, 'scroll the summary up' },
-          allow = { function() core:decide 'allow' end, "send this repo's files for summaries" },
-          deny = { function() core:decide 'deny' end, 'turn summaries off for this repo' },
+          scroll_down = { function() M.scroll(1) end, 'scroll the synopsis down' },
+          scroll_up = { function() M.scroll(-1) end, 'scroll the synopsis up' },
+          allow = { function() core:decide 'allow' end, "send this repo's files for synopses" },
+          deny = { function() core:decide 'deny' end, 'turn synopses off for this repo' },
         }
         for name, action in pairs(actions) do
           local lhs = M.keymaps[name]

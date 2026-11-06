@@ -10,7 +10,7 @@ function M.request(cfg, messages, callback)
   local key
   if cfg.api_key_env then
     key = vim.env[cfg.api_key_env]
-    if not key or key == '' then return done(string.format('set $%s to generate summaries', cfg.api_key_env)) end
+    if not key or key == '' then return done(string.format('set $%s to generate synopses', cfg.api_key_env)) end
   end
 
   local body = vim.tbl_extend('force', cfg.params or {}, { model = cfg.model, messages = messages, stream = false })

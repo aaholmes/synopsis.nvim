@@ -48,20 +48,20 @@ function M.setup(opts)
   local function repo() return vim.fs.root(0, '.git') or vim.fn.getcwd() end
   vim.api.nvim_create_user_command('SynopsisAllow', function()
     require('synopsis.consent').set(repo(), 'allow')
-    vim.notify('synopsis: files from ' .. repo() .. ' may be sent for summaries')
-  end, { desc = "Allow this buffer's repo to be sent for summaries" })
+    vim.notify('synopsis: files from ' .. repo() .. ' may be sent for synopses')
+  end, { desc = "Allow this buffer's repo to be sent for synopses" })
   vim.api.nvim_create_user_command('SynopsisDeny', function()
     require('synopsis.consent').set(repo(), 'deny')
-    vim.notify('synopsis: summaries are off for ' .. repo())
-  end, { desc = "Never send this buffer's repo for summaries" })
+    vim.notify('synopsis: synopses are off for ' .. repo())
+  end, { desc = "Never send this buffer's repo for synopses" })
 
   vim.api.nvim_create_user_command('SynopsisClear', function()
     local store = require 'synopsis.store'
     local root = vim.fs.root(0, '.git') or vim.fn.getcwd()
     local dir = vim.fs.dirname(store.entry_path(root, 'x'))
     vim.fn.delete(dir, 'rf')
-    vim.notify('synopsis: cleared the summaries for ' .. root)
-  end, { desc = "Delete the cached summaries for this buffer's repo" })
+    vim.notify('synopsis: cleared the synopses for ' .. root)
+  end, { desc = "Delete the cached synopses for this buffer's repo" })
 end
 
 return M
