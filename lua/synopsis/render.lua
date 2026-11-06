@@ -43,7 +43,7 @@ local function blocks(text)
   return out
 end
 
----Words with their highlight: text inside **...** becomes WhatsthisLabel, without the asterisks.
+---Words with their highlight: text inside **...** becomes SynopsisLabel, without the asterisks.
 local function words(text, hl)
   local out, pos = {}, 1
   local function add(segment, group)
@@ -55,7 +55,7 @@ local function words(text, hl)
     local s, e, inner = text:find('%*%*(.-)%*%*', pos)
     if not s then break end
     add(text:sub(pos, s - 1), hl)
-    add(inner, 'WhatsthisLabel')
+    add(inner, 'SynopsisLabel')
     pos = e + 1
   end
   add(text:sub(pos), hl)
@@ -69,7 +69,7 @@ function M.layout(view, width)
   local function add_text(text)
     for _, b in ipairs(blocks(text)) do table.insert(items, b) end
   end
-  local function add_message(text) table.insert(items, { text = text, hl = 'WhatsthisMessage' }) end
+  local function add_message(text) table.insert(items, { text = text, hl = 'SynopsisMessage' }) end
 
   if view.kind == 'summary' then
     add_text(cut_opener(view.text))
@@ -92,7 +92,7 @@ function M.layout(view, width)
     local cont = PAD .. (item.bullet and '  ' or '')
     local line, used = first, 0
     if item.bullet then
-      table.insert(marks, { row = #lines, col = #PAD, end_col = #PAD + #'•', hl = 'WhatsthisBullet' })
+      table.insert(marks, { row = #lines, col = #PAD, end_col = #PAD + #'•', hl = 'SynopsisBullet' })
     end
     local limit = avail - (item.bullet and 2 or 0)
     for _, w in ipairs(words(item.text, item.hl)) do
@@ -115,8 +115,8 @@ function M.layout(view, width)
   return { lines = lines, marks = marks }
 end
 
-vim.api.nvim_set_hl(0, 'WhatsthisLabel', { default = true, link = '@markup.strong' })
-vim.api.nvim_set_hl(0, 'WhatsthisBullet', { default = true, link = '@markup.list' })
-vim.api.nvim_set_hl(0, 'WhatsthisMessage', { default = true, link = 'Comment' })
+vim.api.nvim_set_hl(0, 'SynopsisLabel', { default = true, link = '@markup.strong' })
+vim.api.nvim_set_hl(0, 'SynopsisBullet', { default = true, link = '@markup.list' })
+vim.api.nvim_set_hl(0, 'SynopsisMessage', { default = true, link = 'Comment' })
 
 return M

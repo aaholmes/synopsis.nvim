@@ -1,5 +1,5 @@
 local H = dofile 'tests/harness.lua'
-local store = require 'whatsthis.store'
+local store = require 'synopsis.store'
 
 local entry = { path = 'a.lua', content_hash = 'c1', prompt_hash = 'p1', model = 'm', summary = 'Does A.', created = 1 }
 
@@ -18,7 +18,7 @@ end)
 
 H.check('entries live under stdpath cache', function()
   local p = store.entry_path('/repo/one', 'a.lua')
-  H.eq(vim.startswith(p, vim.fn.stdpath 'cache' .. '/whatsthis/'), true, 'cache dir: ' .. p)
+  H.eq(vim.startswith(p, vim.fn.stdpath 'cache' .. '/synopsis/'), true, 'cache dir: ' .. p)
 end)
 
 H.check('status: fresh, stale on content or prompt change, missing', function()

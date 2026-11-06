@@ -1,6 +1,6 @@
-# whatsthis.nvim
+# synopsis.nvim
 
-When you browse a codebase in Telescope, whatsthis shows a short summary of the previewed file in
+When you browse a codebase in Telescope, synopsis shows a short summary of the previewed file in
 a pane above the results list. A summary is one sentence on what the file does and why it exists,
 plus up to three notes: non-obvious behaviour, gotchas, and the other files it works with. It is
 written by a large language model (LLM) for a reader who knows what the project is for but not
@@ -29,20 +29,20 @@ With the built-in `vim.pack`:
 vim.pack.add {
   'https://github.com/nvim-lua/plenary.nvim',
   'https://github.com/nvim-telescope/telescope.nvim',
-  'https://github.com/aaholmes/whatsthis.nvim',
+  'https://github.com/aaholmes/synopsis.nvim',
 }
-require('whatsthis').setup()
+require('synopsis').setup()
 ```
 
-Then give the pickers you want a summary pane the `whatsthis` layout. It is Telescope's
+Then give the pickers you want a summary pane the `synopsis` layout. It is Telescope's
 `horizontal` layout with the pane added above the results, and it accepts the same
 `layout_config` options:
 
 ```lua
 require('telescope').setup {
   pickers = {
-    find_files = { layout_strategy = 'whatsthis' },
-    live_grep = { layout_strategy = 'whatsthis' },
+    find_files = { layout_strategy = 'synopsis' },
+    live_grep = { layout_strategy = 'synopsis' },
   },
 }
 ```
@@ -72,7 +72,7 @@ Without the file, summaries are written for a general programmer.
 The defaults:
 
 ```lua
-require('whatsthis').setup {
+require('synopsis').setup {
   -- Any OpenAI-compatible chat endpoint. api_key_env = false sends no key (a local server).
   llm = {
     url = 'https://api.openai.com',
@@ -98,16 +98,16 @@ Scroll the summary with Alt-u / Alt-d or the mouse wheel. Telescope's own keys s
 For example, a local [llama.cpp](https://github.com/ggml-org/llama.cpp) server:
 
 ```lua
-require('whatsthis').setup {
+require('synopsis').setup {
   llm = { url = 'http://127.0.0.1:8080', model = 'local', api_key_env = false, params = {} },
 }
 ```
 
-The pane's colours come from the highlight groups `WhatsthisLabel` (bold labels such as
-"Watch out:"), `WhatsthisBullet` and `WhatsthisMessage` (status lines), linked by default to
+The pane's colours come from the highlight groups `SynopsisLabel` (bold labels such as
+"Watch out:"), `SynopsisBullet` and `SynopsisMessage` (status lines), linked by default to
 `@markup.strong`, `@markup.list` and `Comment`.
 
-`:WhatsthisClear` deletes the cached summaries for the current buffer's repo.
+`:SynopsisClear` deletes the cached summaries for the current buffer's repo.
 
 ## What is sent, and what it costs
 
@@ -125,7 +125,7 @@ measured) that a summary of a typical source file uses about 5,000 tokens in and
 would be roughly $0.0006, or about $0.60 to preview every file in a 1,000-file repo.
 
 Summaries are stored as one JSON file per summarized file under Neovim's cache directory
-(`~/.cache/nvim/whatsthis` on Linux and macOS), never in the repo. A summary is marked as
+(`~/.cache/nvim/synopsis` on Linux and macOS), never in the repo. A summary is marked as
 outdated, and rewritten next time you stay on the file, when the file changes, or when the
 prompt, background file or model does.
 

@@ -1,5 +1,5 @@
 local H = dofile 'tests/harness.lua'
-local render = require 'whatsthis.render'
+local render = require 'synopsis.render'
 
 local function out(text, width, kind)
   return render.layout({ kind = kind or 'summary', text = text }, width or 40)
@@ -19,7 +19,7 @@ end)
 
 H.check('notes become dots, with a blank line before each', function()
   H.eq(joined(out 'Does A.\n- one\n* two'), '|  Does A.||  • one||  • two|', 'spaced dots')
-  H.eq(#marks_with(out 'Does A.\n- one', 'WhatsthisBullet'), 1, 'dot highlighted')
+  H.eq(#marks_with(out 'Does A.\n- one', 'SynopsisBullet'), 1, 'dot highlighted')
 end)
 
 H.check('runs of blank lines become one', function()
@@ -47,7 +47,7 @@ end)
 H.check('bold labels lose their asterisks and are highlighted', function()
   local r = out '- **Watch out:** x'
   H.eq(r.lines[2], '  • Watch out: x', 'text')
-  H.eq(table.concat(marks_with(r, 'WhatsthisLabel'), ' '), 'Watch out:', 'highlighted words')
+  H.eq(table.concat(marks_with(r, 'SynopsisLabel'), ' '), 'Watch out:', 'highlighted words')
 end)
 
 H.check('an opening "This file provides" is cut to the verb', function()
@@ -58,11 +58,11 @@ end)
 
 H.check('status messages are dimmed, and follow an outdated summary after a blank line', function()
   local r = render.layout({ kind = 'waiting' }, 40)
-  H.eq(#marks_with(r, 'WhatsthisMessage') > 0, true, 'waiting dimmed')
+  H.eq(#marks_with(r, 'SynopsisMessage') > 0, true, 'waiting dimmed')
   r = render.layout({ kind = 'outdated', text = 'Does A.' }, 60)
   H.eq(r.lines[2], '  Does A.', 'summary first')
   H.eq(r.lines[3], '', 'blank line')
-  H.eq(#marks_with(r, 'WhatsthisMessage') > 0, true, 'marker dimmed')
+  H.eq(#marks_with(r, 'SynopsisMessage') > 0, true, 'marker dimmed')
 end)
 
 H.check('skipped and failed views give their reason', function()

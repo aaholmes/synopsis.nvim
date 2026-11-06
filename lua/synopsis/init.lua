@@ -1,5 +1,5 @@
--- whatsthis: a short LLM-written summary of each file, shown in a pane above Telescope's results.
--- Use it by giving a picker `layout_strategy = 'whatsthis'`.
+-- synopsis: a short LLM-written summary of each file, shown in a pane above Telescope's results.
+-- Use it by giving a picker `layout_strategy = 'synopsis'`.
 local M = {}
 
 local defaults = {
@@ -35,17 +35,17 @@ M.config = vim.deepcopy(defaults)
 function M.setup(opts)
   M.config = vim.tbl_deep_extend('force', vim.deepcopy(defaults), opts or {})
   M.config.background = vim.fs.normalize(M.config.background)
-  local tele = require 'whatsthis.telescope'
-  M.core = require('whatsthis.core').new(vim.tbl_extend('force', M.config, { render = tele.render }))
+  local tele = require 'synopsis.telescope'
+  M.core = require('synopsis.core').new(vim.tbl_extend('force', M.config, { render = tele.render }))
   tele.register(M.config.height)
   tele.attach(M.core, M.config.keymaps)
 
-  vim.api.nvim_create_user_command('WhatsthisClear', function()
-    local store = require 'whatsthis.store'
+  vim.api.nvim_create_user_command('SynopsisClear', function()
+    local store = require 'synopsis.store'
     local root = vim.fs.root(0, '.git') or vim.fn.getcwd()
     local dir = vim.fs.dirname(store.entry_path(root, 'x'))
     vim.fn.delete(dir, 'rf')
-    vim.notify('whatsthis: cleared the summaries for ' .. root)
+    vim.notify('synopsis: cleared the summaries for ' .. root)
   end, { desc = "Delete the cached summaries for this buffer's repo" })
 end
 

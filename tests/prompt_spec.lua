@@ -1,12 +1,12 @@
 local H = dofile 'tests/harness.lua'
-local prompt = require 'whatsthis.prompt'
+local prompt = require 'synopsis.prompt'
 
 local readme = {}
 for i = 1, 200 do readme[i] = 'readme line ' .. i end
 local files = { ['README.md'] = table.concat(readme, '\n'), ['src/a.lua'] = 'return 1' }
 for i = 1, 450 do files[string.format('gen/f%03d.txt', i)] = 'x' end
 local root = H.make_repo(files)
-local background = WHATSTHIS_ROOT .. '/tests/fixtures/background.md'
+local background = SYNOPSIS_ROOT .. '/tests/fixtures/background.md'
 
 local function build(over)
   return prompt.build(vim.tbl_extend('force', {

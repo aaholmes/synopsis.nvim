@@ -8,9 +8,9 @@
 --   pending   a request is in flight
 --   skipped   never sent (view.text gives the reason)
 --   error     the request failed (view.text)
-local store = require 'whatsthis.store'
-local prompt = require 'whatsthis.prompt'
-local llm = require 'whatsthis.llm'
+local store = require 'synopsis.store'
+local prompt = require 'synopsis.prompt'
+local llm = require 'synopsis.llm'
 
 local Core = {}
 Core.__index = Core

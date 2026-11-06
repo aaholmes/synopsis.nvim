@@ -1,11 +1,11 @@
 local H = dofile 'tests/harness.lua'
-local core = require 'whatsthis.core'
-local store = require 'whatsthis.store'
-local prompt = require 'whatsthis.prompt'
+local core = require 'synopsis.core'
+local store = require 'synopsis.store'
+local prompt = require 'synopsis.prompt'
 local mock = dofile 'tests/mock_llm.lua'
 
-vim.env.WHATSTHIS_TEST_KEY = 'sk-test'
-local background = WHATSTHIS_ROOT .. '/tests/fixtures/background.md'
+vim.env.SYNOPSIS_TEST_KEY = 'sk-test'
+local background = SYNOPSIS_ROOT .. '/tests/fixtures/background.md'
 
 local function setup(files, server, over)
   local root = H.make_repo(files or {
@@ -14,7 +14,7 @@ local function setup(files, server, over)
   })
   local views = {}
   local c = core.new(vim.tbl_extend('force', {
-    llm = { url = server and server.url or 'http://127.0.0.1:9', model = 'mock-model', api_key_env = 'WHATSTHIS_TEST_KEY' },
+    llm = { url = server and server.url or 'http://127.0.0.1:9', model = 'mock-model', api_key_env = 'SYNOPSIS_TEST_KEY' },
     background = background, delay_ms = 50, max_bytes = 1000, max_concurrent = 3,
     exclude = { '.env*', '*.pem' },
     render = function(path, view) table.insert(views, { path = path, kind = view.kind, text = view.text }) end,

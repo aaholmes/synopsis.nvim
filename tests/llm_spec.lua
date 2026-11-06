@@ -1,13 +1,13 @@
 local H = dofile 'tests/harness.lua'
-local llm = require 'whatsthis.llm'
+local llm = require 'synopsis.llm'
 local mock = dofile 'tests/mock_llm.lua'
 
-vim.env.WHATSTHIS_TEST_KEY = 'sk-test'
+vim.env.SYNOPSIS_TEST_KEY = 'sk-test'
 local messages = { { role = 'system', content = 'sys' }, { role = 'user', content = 'hello' } }
 
 local function cfg(server, over)
   return vim.tbl_extend('force', {
-    url = server and server.url or 'http://127.0.0.1:9', model = 'gpt-6-luna', api_key_env = 'WHATSTHIS_TEST_KEY',
+    url = server and server.url or 'http://127.0.0.1:9', model = 'gpt-6-luna', api_key_env = 'SYNOPSIS_TEST_KEY',
     params = { reasoning_effort = 'none' }, timeout_ms = 5000,
   }, over or {})
 end
@@ -50,8 +50,8 @@ end)
 
 H.check('a missing key errors without sending anything', function()
   local server = mock.start 'never'
-  local got = run(cfg(server, { api_key_env = 'WHATSTHIS_UNSET_KEY' }))
-  H.eq(got.err:find('WHATSTHIS_UNSET_KEY', 1, true) ~= nil, true, 'err names the variable: ' .. tostring(got.err))
+  local got = run(cfg(server, { api_key_env = 'SYNOPSIS_UNSET_KEY' }))
+  H.eq(got.err:find('SYNOPSIS_UNSET_KEY', 1, true) ~= nil, true, 'err names the variable: ' .. tostring(got.err))
   vim.wait(200)
   H.eq(#server.requests, 0, 'requests sent')
 end)

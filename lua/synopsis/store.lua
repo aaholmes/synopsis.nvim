@@ -1,4 +1,4 @@
--- The summary cache: one JSON file per summarized file, under stdpath('cache')/whatsthis, so
+-- The summary cache: one JSON file per summarized file, under stdpath('cache')/synopsis, so
 -- nothing is written into the user's repo and two Neovim instances never overwrite each
 -- other's entries.
 local M = {}
@@ -7,7 +7,7 @@ local function short_hash(s) return vim.fn.sha256(s):sub(1, 16) end
 
 ---Where the entry for `relpath` inside the repo at `root` is kept.
 function M.entry_path(root, relpath)
-  return string.format('%s/whatsthis/%s/%s.json', vim.fn.stdpath 'cache', short_hash(root), short_hash(relpath))
+  return string.format('%s/synopsis/%s/%s.json', vim.fn.stdpath 'cache', short_hash(root), short_hash(relpath))
 end
 
 ---The stored entry, or nil if there is none or it cannot be decoded.
