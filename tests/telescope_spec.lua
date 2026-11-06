@@ -3,7 +3,9 @@ local mock = dofile 'tests/mock_llm.lua'
 
 vim.o.columns, vim.o.lines = 160, 50
 vim.env.WHATSTHIS_TEST_KEY = 'sk-test'
-local server = mock.start 'Summary from the mock.'
+local long = { 'Summary from the mock.', '' }
+for i = 1, 60 do long[#long + 1] = '- note ' .. i end
+local server = mock.start(table.concat(long, '\n'))
 local root = H.make_repo { ['a.lua'] = 'return "a"', ['b.lua'] = 'return "b"' }
 vim.cmd.cd(root)
 
@@ -12,7 +14,7 @@ local whatsthis = require 'whatsthis'
 whatsthis.setup {
   llm = { url = server.url, model = 'mock-model', api_key_env = 'WHATSTHIS_TEST_KEY' },
   background = WHATSTHIS_ROOT .. '/tests/fixtures/background.md',
-  delay_ms = 50, height = 6,
+  delay_ms = 50,
 }
 local actions = require 'telescope.actions'
 local builtin = require 'telescope.builtin'
@@ -81,6 +83,34 @@ end)
 H.check('the pane shows the summary for the previewed file', function()
   vim.wait(3000, function() return (pane_text() or ''):find('Summary from the mock.', 1, true) ~= nil end, 10)
   H.eq((pane_text() or ''):find('Summary from the mock.', 1, true) ~= nil, true, 'pane text: ' .. tostring(pane_text()))
+end)
+
+H.check('the pane is titled Summary and is taller than the results under it', function()
+  local pane, results = find 'whatsthis', find 'TelescopeResults'
+  local title = vim.api.nvim_win_get_config(pane.win).title
+  H.eq(title and title[1] and vim.trim(title[1][1]), 'Summary', 'title')
+  H.eq(pane.h - 2 > results.h, true, string.format('pane %d lines, results %d', pane.h - 2, results.h))
+end)
+
+local function topline() return vim.fn.getwininfo(find('whatsthis').win)[1].topline end
+
+H.check('Alt-d and Alt-u scroll the summary from the prompt, in Insert and Normal mode', function()
+  H.eq(topline(), 1, 'starts at the top')
+  for _, mode in ipairs { 'i', 'n' } do
+    local down = vim.fn.maparg('<M-d>', mode, false, true)
+    local up = vim.fn.maparg('<M-u>', mode, false, true)
+    H.eq(down.buffer, 1, mode .. ' <M-d> is mapped in the prompt')
+    down.callback()
+    H.eq(topline() > 1, true, mode .. ' scrolled down')
+    up.callback()
+    H.eq(topline(), 1, mode .. ' scrolled back up')
+  end
+end)
+
+-- Headless Neovim has no screen for wheel events to land on, so this checks the setting the wheel
+-- needs: it skips windows that cannot take focus, as Telescope's results and preview can.
+H.check('the pane can take focus, so the mouse wheel scrolls it', function()
+  H.eq(vim.api.nvim_win_get_config(find('whatsthis').win).focusable, true, 'focusable')
 end)
 
 H.check('the pane follows the layout when Neovim is resized', function()

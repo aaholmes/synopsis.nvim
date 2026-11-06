@@ -85,9 +85,13 @@ require('whatsthis').setup {
   max_bytes = 100 * 1024, -- larger files are never sent
   exclude = { '.env', '.env.*', '*.pem', '*.key', '*secret*', '*.lock', '*-lock.json' },
   max_concurrent = 3,
-  height = 8,             -- lines of text in the pane
+  height = 0.6,           -- below 1: fraction of the left column; otherwise lines
+  keymaps = { scroll_up = '<M-u>', scroll_down = '<M-d>' }, -- in the prompt; false for none
 }
 ```
+
+Scroll the summary with Alt-u / Alt-d or the mouse wheel. Telescope's own keys scroll the preview
+(`<C-u>` / `<C-d>`) and the results (`<PageUp>` / `<PageDown>`).
 
 For example, a local [llama.cpp](https://github.com/ggml-org/llama.cpp) server:
 

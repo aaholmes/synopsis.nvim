@@ -22,8 +22,12 @@ local defaults = {
   max_bytes = 100 * 1024,
   exclude = { '.env', '.env.*', '*.pem', '*.key', '*secret*', '*.lock', '*-lock.json' },
   max_concurrent = 3,
-  -- Lines of text in the pane.
-  height = 8,
+  -- Height of the summary pane: below 1, a fraction of the left column's rows (the results get
+  -- the rest); otherwise a number of lines.
+  height = 0.6,
+  -- Keys, in the picker's prompt, that scroll the summary half a page; false for none. Telescope
+  -- uses <C-u>/<C-d> for the preview and <PageUp>/<PageDown> for the results.
+  keymaps = { scroll_up = '<M-u>', scroll_down = '<M-d>' },
 }
 
 M.config = vim.deepcopy(defaults)
@@ -34,7 +38,7 @@ function M.setup(opts)
   local tele = require 'whatsthis.telescope'
   M.core = require('whatsthis.core').new(vim.tbl_extend('force', M.config, { render = tele.render }))
   tele.register(M.config.height)
-  tele.attach(M.core)
+  tele.attach(M.core, M.config.keymaps)
 
   vim.api.nvim_create_user_command('WhatsthisClear', function()
     local store = require 'whatsthis.store'
