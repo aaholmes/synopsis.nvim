@@ -29,6 +29,8 @@ H.check('the system turn asks for ASD-STE100 Simplified Technical English and bl
   local sys = build()[1].content
   H.eq(sys:find('ASD-STE100', 1, true) ~= nil, true, 'names the standard')
   H.eq(sys:find('blank line', 1, true) ~= nil, true, 'asks for blank lines')
+  H.eq(sys:find('Begin with a verb', 1, true) ~= nil, true, 'asks to begin with a verb')
+  H.eq(sys:find('Do not begin with "This file"', 1, true) ~= nil, true, 'rules out the opener')
 end)
 
 H.check('a missing background file is not an error', function()

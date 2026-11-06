@@ -109,6 +109,10 @@ end)
 
 -- Headless Neovim has no screen for wheel events to land on, so this checks the setting the wheel
 -- needs: it skips windows that cannot take focus, as Telescope's results and preview can.
+H.check('the pane draws notes as dots', function()
+  H.eq((pane_text() or ''):find('• note 1', 1, true) ~= nil, true, 'dot')
+end)
+
 H.check('the pane can take focus, so the mouse wheel scrolls it', function()
   H.eq(vim.api.nvim_win_get_config(find('whatsthis').win).focusable, true, 'focusable')
 end)

@@ -51,16 +51,13 @@ local function open_pane(picker)
     pane.buf = vim.api.nvim_create_buf(false, true)
     vim.bo[pane.buf].bufhidden = 'hide'
     vim.b[pane.buf].whatsthis = true
-    -- Markdown, so renderers such as markview draw the summary's emphasis and bullets.
-    vim.bo[pane.buf].filetype = 'markdown'
   end
   if pane.win and vim.api.nvim_win_is_valid(pane.win) then
     vim.api.nvim_win_set_config(pane.win, win_config(picker._whatsthis))
   else
     pane.win = vim.api.nvim_open_win(pane.buf, false, win_config(picker._whatsthis))
-    vim.wo[pane.win].wrap = true
-    vim.wo[pane.win].linebreak = true
-    vim.wo[pane.win].conceallevel = 2
+    -- The text is wrapped to the pane's width when it is laid out (see render.lua).
+    vim.wo[pane.win].wrap = false
     vim.wo[pane.win].winhighlight = 'Normal:TelescopeResultsNormal,FloatBorder:TelescopeResultsBorder,FloatTitle:TelescopeResultsTitle'
   end
   pane.picker = picker
@@ -75,53 +72,22 @@ local function current_picker()
   end
 end
 
-local MESSAGES = {
-  waiting = '_No summary yet; one is written if you stay on this file._',
-  pending = '_Writing a summary…_',
-  outdated = '_(Outdated: the file or prompt changed since this was written; updating if you stay on this file.)_',
-}
+local ns = vim.api.nvim_create_namespace 'whatsthis.pane'
 
----A summary laid out for scanning: one blank line before each note and between paragraphs,
----whatever spacing the model gave. A line that does not start a note or follow a blank line
----continues the one above, so wrapped sentences and notes stay together.
-local function spaced(text)
-  local out = {}
-  local after_blank = true
-  for _, line in ipairs(vim.split(text, '\n', { plain = true })) do
-    if vim.trim(line) == '' then
-      after_blank = true
-    else
-      local starts_block = after_blank or line:match '^[-*] ' ~= nil
-      if starts_block and #out > 0 then table.insert(out, '') end
-      table.insert(out, line)
-      after_blank = false
-    end
-  end
-  return table.concat(out, '\n')
-end
-
----Lines to show for a core view.
-function M.lines(view)
-  local text
-  if view.kind == 'summary' then
-    text = spaced(view.text)
-  elseif view.kind == 'outdated' or (view.kind == 'pending' and view.text) then
-    text = spaced(view.text) .. '\n\n' .. MESSAGES[view.kind == 'pending' and 'pending' or 'outdated']
-  elseif view.kind == 'skipped' then
-    text = '_Not summarized: ' .. view.text .. '._'
-  elseif view.kind == 'error' then
-    text = '_Summary failed: ' .. view.text .. '_'
-  else
-    text = MESSAGES[view.kind] or ''
-  end
-  return vim.split(text, '\n', { plain = true })
-end
-
+---Show `view` in the pane, laid out for its current width. The view is kept so a resize can
+---lay it out again.
 function M.render(_, view)
+  pane.view = view
   if not (pane.buf and vim.api.nvim_buf_is_valid(pane.buf)) then return end
+  local width = (pane.win and vim.api.nvim_win_is_valid(pane.win)) and vim.api.nvim_win_get_width(pane.win) or 40
+  local r = require('whatsthis.render').layout(view, width)
   vim.bo[pane.buf].modifiable = true
-  vim.api.nvim_buf_set_lines(pane.buf, 0, -1, false, M.lines(view))
+  vim.api.nvim_buf_set_lines(pane.buf, 0, -1, false, r.lines)
   vim.bo[pane.buf].modifiable = false
+  vim.api.nvim_buf_clear_namespace(pane.buf, ns, 0, -1)
+  for _, m in ipairs(r.marks) do
+    vim.api.nvim_buf_set_extmark(pane.buf, ns, m.row, m.col, { end_col = m.end_col, hl_group = m.hl })
+  end
   if pane.win and vim.api.nvim_win_is_valid(pane.win) then vim.api.nvim_win_set_cursor(pane.win, { 1, 0 }) end
 end
 
@@ -163,7 +129,10 @@ function M.attach(core, keymaps)
           -- Telescope recomputes the layout in its own VimResized handler; move the pane after it.
           callback = function()
             vim.schedule(function()
-              if pane.picker == picker then open_pane(picker) end
+              if pane.picker == picker then
+                open_pane(picker)
+                if pane.view then M.render(nil, pane.view) end
+              end
             end)
           end,
         })

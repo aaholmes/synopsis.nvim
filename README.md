@@ -2,7 +2,7 @@
 
 When you browse a codebase in Telescope, whatsthis shows a short summary of the previewed file in
 a pane above the results list. A summary is one sentence on what the file does and why it exists,
-plus up to four notes: non-obvious behaviour, gotchas, and the other files it works with. It is
+plus up to three notes: non-obvious behaviour, gotchas, and the other files it works with. It is
 written by a large language model (LLM) for a reader who knows what the project is for but not
 its details. If you keep a background file, the wording is pitched at your level.
 Summaries are written in ASD-STE100 Simplified Technical English (short sentences, one fact
@@ -102,6 +102,10 @@ require('whatsthis').setup {
   llm = { url = 'http://127.0.0.1:8080', model = 'local', api_key_env = false, params = {} },
 }
 ```
+
+The pane's colours come from the highlight groups `WhatsthisLabel` (bold labels such as
+"Watch out:"), `WhatsthisBullet` and `WhatsthisMessage` (status lines), linked by default to
+`@markup.strong`, `@markup.list` and `Comment`.
 
 `:WhatsthisClear` deletes the cached summaries for the current buffer's repo.
 
