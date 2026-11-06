@@ -86,9 +86,16 @@ local function words(text, hl)
   return out
 end
 
----Lines and highlights for `view` in a pane `width` columns wide. Marks are
----{ row, col, end_col, hl } with 0-based rows and byte columns.
-function M.layout(view, width)
+---A key as the user would say it: <M-y> → Alt-y, <C-y> → Ctrl-y.
+local function key_name(lhs)
+  return (lhs:gsub('^<[Mm]%-(.)>$', 'Alt-%1'):gsub('^<[Aa]%-(.)>$', 'Alt-%1'):gsub('^<[Cc]%-(.)>$', 'Ctrl-%1'))
+end
+
+---Lines and highlights for `view` in a pane `width` columns wide. opts.keymaps gives the keys
+---named in the question about sending a repo. Marks are { row, col, end_col, hl } with 0-based
+---rows and byte columns.
+function M.layout(view, width, opts)
+  local keymaps = (opts and opts.keymaps) or {}
   local items = {}
   local function add_text(text)
     for _, b in ipairs(blocks(text)) do table.insert(items, b) end
@@ -100,6 +107,15 @@ function M.layout(view, width)
   elseif view.kind == 'outdated' or view.kind == 'pending' then
     if view.text then add_text(cut_opener(view.text)) end
     add_message(MESSAGES[view.kind])
+  elseif view.kind == 'ask' then
+    table.insert(items, { text = string.format('Send files from `%s` to %s to write summaries?', view.text, view.host or 'the model provider') })
+    local yes = keymaps.allow and key_name(keymaps.allow) or ':SynopsisAllow'
+    local no = keymaps.deny and key_name(keymaps.deny) or ':SynopsisDeny'
+    add_message(string.format('%s: yes, for this repo. %s: no.', yes, no))
+    add_message 'A file is sent only after you stay on it for a second.'
+  elseif view.kind == 'off' then
+    if view.text then add_text(cut_opener(view.text)) end
+    add_message 'Summaries are off for this repo. :SynopsisAllow turns them on.'
   elseif view.kind == 'skipped' then
     add_message('Not summarized: ' .. view.text .. '.')
   elseif view.kind == 'error' then

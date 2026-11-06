@@ -17,7 +17,8 @@ local function setup(files, server, over)
     llm = { url = server and server.url or 'http://127.0.0.1:9', model = 'mock-model', api_key_env = 'SYNOPSIS_TEST_KEY' },
     background = background, delay_ms = 50, max_bytes = 1000, max_concurrent = 3,
     exclude = { '.env*', '*.pem' },
-    render = function(path, view) table.insert(views, { path = path, kind = view.kind, text = view.text }) end,
+    consent = 'always',
+    render = function(path, view) table.insert(views, { path = path, kind = view.kind, text = view.text, host = view.host }) end,
   }, over or {}))
   return c, root, views
 end
@@ -143,6 +144,47 @@ H.check('no more than max_concurrent requests run, and queued ones still finish'
   vim.wait(3000, function() return store.read(root, 'c.lua') ~= nil end, 10)
   H.eq(server.max_open <= 2, true, 'max open: ' .. server.max_open)
   H.eq(#server.requests, 3, 'requests')
+end)
+
+H.check('with consent = ask, an unknown repo is asked about and nothing is sent', function()
+  local server = mock.start 'S.'
+  local c, root, views = setup(nil, server, { consent = 'ask' })
+  c:preview(root .. '/a.lua')
+  H.eq(last(views).kind, 'ask', 'asks')
+  H.eq(last(views).text, root, 'names the repo')
+  H.eq(last(views).host, '127.0.0.1', 'names the host')
+  vim.wait(200)
+  H.eq(#server.requests, 0, 'requests')
+end)
+
+H.check('allowing a repo sends the summary request and stops asking', function()
+  local server = mock.start 'Allowed A.'
+  local c, root, views = setup(nil, server, { consent = 'ask' })
+  c:preview(root .. '/a.lua')
+  c:decide 'allow'
+  vim.wait(2000, function() return last(views).kind == 'summary' end, 10)
+  H.eq(last(views).text, 'Allowed A.', 'summary')
+  c:preview(root .. '/b.lua')
+  H.eq(last(views).kind, 'waiting', 'another file in the repo is not asked about')
+end)
+
+H.check('denying a repo sends nothing and says how to turn summaries on', function()
+  local server = mock.start 'S.'
+  local c, root, views = setup(nil, server, { consent = 'ask' })
+  c:preview(root .. '/a.lua')
+  c:decide 'deny'
+  H.eq(last(views).kind, 'off', 'off')
+  c:preview(root .. '/b.lua')
+  H.eq(last(views).kind, 'off', 'still off for the next file')
+  vim.wait(200)
+  H.eq(#server.requests, 0, 'requests')
+end)
+
+H.check('cached summaries are shown in a repo that was never allowed', function()
+  local c, root, views = setup(nil, nil, { consent = 'ask' })
+  store.write(root, 'a.lua', { path = 'a.lua', content_hash = vim.fn.sha256 'return "a"', prompt_hash = prompt.hash(background, 'mock-model'), model = 'mock-model', summary = 'Cached A.', created = 0 })
+  c:preview(root .. '/a.lua')
+  H.eq(last(views).kind, 'summary', 'shown')
 end)
 
 H.finish()

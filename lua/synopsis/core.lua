@@ -8,7 +8,10 @@
 --   pending   a request is in flight
 --   skipped   never sent (view.text gives the reason)
 --   error     the request failed (view.text)
+--   ask       the user has not said whether this repo (view.text) may be sent to view.host
+--   off       the user said no for this repo; view.text is an older summary, if any
 local store = require 'synopsis.store'
+local consent = require 'synopsis.consent'
 local prompt = require 'synopsis.prompt'
 local llm = require 'synopsis.llm'
 
@@ -17,7 +20,8 @@ Core.__index = Core
 
 local M = {}
 
----opts: { llm, background, delay_ms, max_bytes, max_concurrent, exclude, render }
+---opts: { llm, background, delay_ms, max_bytes, max_concurrent, exclude, render, consent }.
+---consent = 'always' sends without asking; anything else asks once for each repo.
 function M.new(opts)
   local self = setmetatable({ opts = opts, pending = {}, queue = {}, active = 0 }, Core)
   self.timer = assert(vim.uv.new_timer())
@@ -45,8 +49,8 @@ local function locate(path)
   return root, rel
 end
 
-function Core:render(path, kind, text)
-  if path == self.current then self.opts.render(path, { kind = kind, text = text }) end
+function Core:render(path, kind, text, host)
+  if path == self.current then self.opts.render(path, { kind = kind, text = text, host = host }) end
 end
 
 ---Why `path` must not be sent, or nil if it may be. Returns the file text when it may.
@@ -71,6 +75,7 @@ function Core:preview(path)
   self.timer:stop()
   self.current = path
   local root, rel = locate(path)
+  self.current_root = root
   local reason, text = self:check(path, rel)
   if reason then return self:render(path, 'skipped', reason) end
 
@@ -83,6 +88,11 @@ function Core:preview(path)
   local status = store.status(entry, job.content_hash, job.prompt_hash)
   if status == 'fresh' then return self:render(path, 'summary', entry.summary) end
   if self.pending[path] then return self:render(path, 'pending', entry and entry.summary) end
+  local decision = self.opts.consent == 'always' and 'allow' or consent.get(root)
+  if decision == 'deny' then return self:render(path, 'off', entry and entry.summary) end
+  if decision ~= 'allow' then
+    return self:render(path, 'ask', root, (self.opts.llm.url or ''):match '^%a+://([^/:]+)' or self.opts.llm.url)
+  end
   if status == 'stale' then
     self:render(path, 'outdated', entry.summary)
   else
@@ -91,6 +101,14 @@ function Core:preview(path)
   self.timer:start(self.opts.delay_ms, 0, vim.schedule_wrap(function()
     if self.current == path and not self.pending[path] then self:enqueue(job) end
   end))
+end
+
+---Record the user's answer ('allow' or 'deny') for the repo of the previewed file, then show
+---that file again under the new decision.
+function Core:decide(choice)
+  if not self.current then return end
+  consent.set(self.current_root, choice)
+  self:preview(self.current)
 end
 
 ---Called when the picker closes or previews something that is not a file.

@@ -82,4 +82,15 @@ H.check('skipped and failed views give their reason', function()
   H.eq(joined(render.layout({ kind = 'error', text = 'HTTP 500' }, 60)):find('HTTP 500', 1, true) ~= nil, true, 'error')
 end)
 
+H.check('the question names the repo, the host and the keys', function()
+  local t = joined(render.layout({ kind = 'ask', text = '/home/me/proj', host = 'api.openai.com' }, 80, { keymaps = { allow = '<M-y>', deny = '<M-n>' } }))
+  for _, want in ipairs { '/home/me/proj', 'api.openai.com', 'Alt-y', 'Alt-n' } do
+    H.eq(t:find(want, 1, true) ~= nil, true, 'mentions ' .. want .. ': ' .. t)
+  end
+end)
+
+H.check('the off message says how to turn summaries on', function()
+  H.eq(joined(render.layout({ kind = 'off' }, 80)):find(':SynopsisAllow', 1, true) ~= nil, true, 'command named')
+end)
+
 H.finish()

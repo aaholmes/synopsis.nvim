@@ -15,6 +15,7 @@ synopsis.setup {
   llm = { url = server.url, model = 'mock-model', api_key_env = 'SYNOPSIS_TEST_KEY' },
   background = SYNOPSIS_ROOT .. '/tests/fixtures/background.md',
   delay_ms = 50,
+  consent = 'always',
 }
 local actions = require 'telescope.actions'
 local builtin = require 'telescope.builtin'
@@ -115,6 +116,18 @@ end)
 
 H.check('the pane can take focus, so the mouse wheel scrolls it', function()
   H.eq(vim.api.nvim_win_get_config(find('synopsis').win).focusable, true, 'focusable')
+end)
+
+H.check('Alt-y in the prompt allows the repo and Alt-n turns summaries off', function()
+  local consent = require 'synopsis.consent'
+  for _, mode in ipairs { 'i', 'n' } do
+    H.eq(vim.fn.maparg('<M-y>', mode, false, true).buffer, 1, mode .. ' <M-y> mapped')
+    H.eq(vim.fn.maparg('<M-n>', mode, false, true).buffer, 1, mode .. ' <M-n> mapped')
+  end
+  vim.fn.maparg('<M-n>', 'i', false, true).callback()
+  H.eq(consent.get(root), 'deny', 'denied')
+  vim.fn.maparg('<M-y>', 'i', false, true).callback()
+  H.eq(consent.get(root), 'allow', 'allowed')
 end)
 
 H.check('the pane follows the layout when Neovim is resized', function()

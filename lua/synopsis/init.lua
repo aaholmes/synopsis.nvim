@@ -16,6 +16,10 @@ local defaults = {
   },
   -- Reader background, so summaries are pitched at your level. Shared with butwhy.
   background = '~/.config/butwhy/background.md',
+  -- 'ask': before the first file of a repo is sent, the pane asks whether that repo may be sent
+  -- (answered with the allow / deny keys or :SynopsisAllow / :SynopsisDeny, and remembered).
+  -- 'always': send without asking, e.g. for a local model server.
+  consent = 'ask',
   -- How long a file must stay previewed before its summary is requested.
   delay_ms = 1000,
   -- Files larger than this, binary files and files matching `exclude` are never sent.
@@ -25,9 +29,10 @@ local defaults = {
   -- Height of the summary pane: below 1, a fraction of the left column's rows (the results get
   -- the rest); otherwise a number of lines.
   height = 0.6,
-  -- Keys, in the picker's prompt, that scroll the summary half a page; false for none. Telescope
-  -- uses <C-u>/<C-d> for the preview and <PageUp>/<PageDown> for the results.
-  keymaps = { scroll_up = '<M-u>', scroll_down = '<M-d>' },
+  -- Keys in the picker's prompt; false for none. scroll_* move the summary half a page (Telescope
+  -- uses <C-u>/<C-d> for the preview and <PageUp>/<PageDown> for the results); allow / deny
+  -- answer whether this repo's files may be sent.
+  keymaps = { scroll_up = '<M-u>', scroll_down = '<M-d>', allow = '<M-y>', deny = '<M-n>' },
 }
 
 M.config = vim.deepcopy(defaults)
@@ -39,6 +44,16 @@ function M.setup(opts)
   M.core = require('synopsis.core').new(vim.tbl_extend('force', M.config, { render = tele.render }))
   tele.register(M.config.height)
   tele.attach(M.core, M.config.keymaps)
+
+  local function repo() return vim.fs.root(0, '.git') or vim.fn.getcwd() end
+  vim.api.nvim_create_user_command('SynopsisAllow', function()
+    require('synopsis.consent').set(repo(), 'allow')
+    vim.notify('synopsis: files from ' .. repo() .. ' may be sent for summaries')
+  end, { desc = "Allow this buffer's repo to be sent for summaries" })
+  vim.api.nvim_create_user_command('SynopsisDeny', function()
+    require('synopsis.consent').set(repo(), 'deny')
+    vim.notify('synopsis: summaries are off for ' .. repo())
+  end, { desc = "Never send this buffer's repo for summaries" })
 
   vim.api.nvim_create_user_command('SynopsisClear', function()
     local store = require 'synopsis.store'

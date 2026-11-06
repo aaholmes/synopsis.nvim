@@ -80,7 +80,7 @@ function M.render(_, view)
   pane.view = view
   if not (pane.buf and vim.api.nvim_buf_is_valid(pane.buf)) then return end
   local width = (pane.win and vim.api.nvim_win_is_valid(pane.win)) and vim.api.nvim_win_get_width(pane.win) or 40
-  local r = require('synopsis.render').layout(view, width)
+  local r = require('synopsis.render').layout(view, width, { keymaps = M.keymaps })
   vim.bo[pane.buf].modifiable = true
   vim.api.nvim_buf_set_lines(pane.buf, 0, -1, false, r.lines)
   vim.bo[pane.buf].modifiable = false
@@ -98,9 +98,10 @@ function M.scroll(dir)
   vim.api.nvim_win_call(pane.win, function() vim.cmd('normal! ' .. n .. vim.keycode(dir > 0 and '<C-e>' or '<C-y>')) end)
 end
 
----Hook the pane into Telescope for `core`. `keymaps` ({ scroll_up, scroll_down }, either false
----to skip it) are mapped in the prompt buffer of each picker with the pane.
+---Hook the pane into Telescope for `core`. `keymaps` ({ scroll_up, scroll_down, allow, deny },
+---any of them false to skip it) are mapped in the prompt buffer of each picker with the pane.
 function M.attach(core, keymaps)
+  M.keymaps = keymaps or {}
   local group = vim.api.nvim_create_augroup('synopsis', { clear = true })
   vim.api.nvim_create_autocmd('User', {
     group = group,
@@ -111,11 +112,15 @@ function M.attach(core, keymaps)
       local first = pane.picker ~= picker
       open_pane(picker)
       if first then
-        for name, dir in pairs { scroll_down = 1, scroll_up = -1 } do
-          local lhs = keymaps and keymaps[name]
-          if lhs then
-            vim.keymap.set({ 'i', 'n' }, lhs, function() M.scroll(dir) end, { buffer = prompt, desc = 'synopsis: scroll the summary' })
-          end
+        local actions = {
+          scroll_down = { function() M.scroll(1) end, 'scroll the summary down' },
+          scroll_up = { function() M.scroll(-1) end, 'scroll the summary up' },
+          allow = { function() core:decide 'allow' end, "send this repo's files for summaries" },
+          deny = { function() core:decide 'deny' end, 'turn summaries off for this repo' },
+        }
+        for name, action in pairs(actions) do
+          local lhs = M.keymaps[name]
+          if lhs then vim.keymap.set({ 'i', 'n' }, lhs, action[1], { buffer = prompt, desc = 'synopsis: ' .. action[2] }) end
         end
         vim.api.nvim_create_autocmd({ 'BufWipeout', 'BufUnload' }, {
           group = group, buffer = prompt, once = true,

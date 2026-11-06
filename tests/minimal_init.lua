@@ -9,8 +9,10 @@ for _, dep in ipairs { 'plenary.nvim', 'telescope.nvim' } do
     vim.cmd.packadd(dep)
   end
 end
--- Keep the tests' cache out of the real one.
+-- Keep the tests' cache and consent records out of the real ones (after :packadd, which reads
+-- the data directory).
 vim.env.XDG_CACHE_HOME = vim.fn.tempname()
+vim.env.XDG_DATA_HOME = vim.fn.tempname()
 _G.SYNOPSIS_ROOT = root
 -- A spec that hangs fails after a minute instead of blocking the run.
 vim.defer_fn(function()
