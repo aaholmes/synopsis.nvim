@@ -1,0 +1,27 @@
+name: tests
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        neovim: [stable, nightly]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: ${{ matrix.neovim }}
+      # The Telescope and plenary commits the plugin was developed with.
+      - name: Fetch dependencies
+        run: |
+          mkdir -p deps
+          git clone --quiet https://github.com/nvim-telescope/telescope.nvim deps/telescope.nvim
+          git -C deps/telescope.nvim checkout --quiet 9377230aa5305d9e9aca4ed8dadf1070fb4aa9fc
+          git clone --quiet https://github.com/nvim-lua/plenary.nvim deps/plenary.nvim
+          git -C deps/plenary.nvim checkout --quiet 74b06c6c75e4eeb3108ec01852001636d85a932b
+      - name: Run tests
+        run: |
+          git config --global user.email ci@example.com
+          git config --global user.name ci
+          SYNOPSIS_DEPS=$PWD/deps tests/run.sh
