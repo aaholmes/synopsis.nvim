@@ -50,6 +50,8 @@ function M.request(cfg, messages, callback)
       prompt_tokens = u.prompt_tokens,
       completion_tokens = u.completion_tokens,
       cached_tokens = type(u.prompt_tokens_details) == 'table' and u.prompt_tokens_details.cached_tokens or nil,
+      -- llama-server's own report: tokens reused from its cache (cache_n), read (prompt_n), times.
+      timings = type(json.timings) == 'table' and json.timings or nil,
     }
     done(nil, vim.trim(content), usage)
   end)

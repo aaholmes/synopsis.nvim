@@ -42,6 +42,12 @@ H.check('the token counts the server reports are passed on', function()
   H.eq(got.usage and got.usage.cached_tokens, 64, 'cached prompt tokens')
 end)
 
+H.check("llama-server's timings, when present, are passed on with the token counts", function()
+  local got = run(cfg(mock.start('A.', { timings = { cache_n = 2000, prompt_n = 500, prompt_ms = 812.5 } })))
+  H.eq(got.usage and got.usage.timings and got.usage.timings.cache_n, 2000, 'cache_n')
+  H.eq(got.usage.timings.prompt_ms, 812.5, 'prompt_ms')
+end)
+
 H.check('an HTTP error becomes a readable error with the status and message', function()
   local server = mock.start { { status = 402, body = '{"error":{"message":"insufficient quota"}}' } }
   local got = run(cfg(server))

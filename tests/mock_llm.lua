@@ -2,7 +2,8 @@
 -- start(replies, opts) returns { port, requests, url }. Each POST's decoded JSON body and headers
 -- are appended to `requests` and answered with replies[n] for the nth request (or the last one).
 -- A reply is a string (sent as the assistant's message) or { status = 402, body = '...' }.
--- opts.delay_ms holds every reply back that long, for timeout and concurrency tests.
+-- opts.delay_ms holds every reply back that long, for timeout and concurrency tests;
+-- opts.timings is added to each reply as llama-server's `timings` object.
 local M = {}
 
 local function respond(client, status, body)
@@ -45,6 +46,7 @@ function M.start(replies, opts)
         respond(client, 200, vim.json.encode {
           id = 'mock', choices = { { index = 0, message = { role = 'assistant', content = reply } } },
           usage = { prompt_tokens = 120, completion_tokens = 30, prompt_tokens_details = { cached_tokens = 64 } },
+          timings = opts.timings,
         })
       end
       if opts.delay_ms then
