@@ -9,7 +9,9 @@ local prompt, llm = require 'synopsis.prompt', require 'synopsis.llm'
 local cfg = vim.deepcopy(require('synopsis').config)
 -- A local server instead of the default model: SYNOPSIS_URL and SYNOPSIS_MODEL, no API key.
 if vim.env.SYNOPSIS_URL then
-  cfg.llm = vim.tbl_extend('force', cfg.llm, { url = vim.env.SYNOPSIS_URL, model = vim.env.SYNOPSIS_MODEL or 'local', api_key_env = false, params = {}, timeout_ms = 300000 })
+  cfg.llm = vim.tbl_extend('force', cfg.llm, { url = vim.env.SYNOPSIS_URL, model = vim.env.SYNOPSIS_MODEL or 'local', api_key_env = false, timeout_ms = 300000,
+    -- Extra request fields as JSON, e.g. '{"max_tokens":400,"chat_template_kwargs":{"enable_thinking":false}}'.
+    params = vim.env.SYNOPSIS_PARAMS and vim.json.decode(vim.env.SYNOPSIS_PARAMS) or {} })
 end
 local background = vim.fs.normalize(cfg.background)
 local out = assert(io.open(assert(vim.env.SYNOPSIS_OUT, 'set SYNOPSIS_OUT'), 'a'))
