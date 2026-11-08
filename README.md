@@ -5,36 +5,127 @@
 In the recording, `softmax.py` already has a synopsis, so it appears immediately; `related.lua`
 does not, so one is written after a one-second pause on the file.
 
-When you browse a codebase in Telescope, synopsis shows a short summary of the previewed file in
-a pane above the results list. A summary is one sentence on what the file does, plus up to three
-notes: behaviour that is not obvious, gotchas, and the other files it works with. It is written
-by a large language model (LLM) for a reader who knows what the project is for but not its
-details. If you keep a background file, the wording is pitched at your level.
+synopsis is a Neovim plugin for getting up to speed in an unfamiliar codebase. It does two
+things:
 
-Summaries are written in ASD-STE100 Simplified Technical English (short sentences, one fact
-each, common words), with a blank line between items, so they can be read in a few seconds.
+- **Summaries while you browse.** When you preview a file in
+  [Telescope](https://github.com/nvim-telescope/telescope.nvim), Neovim's fuzzy finder, a pane
+  above the results shows a short summary of it. The summary has one sentence on what the file
+  does, plus up to three notes: behaviour that is not obvious, gotchas, and the files it works
+  with. It is written by a large language model (LLM), pitched at your background if you
+  describe it.
+- **Answers about the repo.** `:SynopsisAsk where is the request retried?` opens a window with
+  an answer. The model finds it by searching and reading the code itself, and cites the lines
+  it relied on as `path:line`, which you can open from the answer.
 
-A summary that already exists appears immediately. A file without one gets one once you have
-stayed on it for a second; with the default model, the summary arrives about 1.3 s later.
-Summaries are cached outside the repo and marked as outdated when the file changes.
+## Goals
 
-`:SynopsisAsk` answers a question about the repo, such as "where is the request retried?" or
-"how does a file get its cache key?". The model searches and reads the code itself, and cites
-the lines it relies on; you can open them from the answer. See [Ask about the repo](#ask-about-the-repo).
+- **Answers you can check.** Every answer cites locations, and one key opens them.
+- **Fast enough not to interrupt browsing.** A cached summary appears immediately, and a new one
+  about 1.3 s after a one-second pause on the file.
+- **Cheap enough to leave on.** A summary costs a median of $0.00014 and an answer $0.0027, with
+  GPT-6 Luna.
+- **Nothing sent without permission.** Each repo is sent to the model provider only after you
+  allow it, and secret-looking files are never sent.
+- **Design decisions backed by measurements.** Each major choice below was tested on real
+  repos, with predictions written before each run.
 
-**Status:** early. Works with Telescope's file and grep pickers and any OpenAI-compatible chat
-endpoint. Tested on macOS with Neovim 0.12.4 and Telescope commit `9377230`; a GitHub Actions
-workflow runs the automated tests on Linux. Not yet available: summaries in the results list, questions about a visual
-selection, and a history of past questions.
+## How it works
 
-## Requirements
+```
+Telescope preview ──► core ──► store (cached summary?) ──► render ──► pane
+                       │ no summary after a 1 s pause
+                       └──► prompt ──► llm (curl) ──► OpenAI-compatible endpoint
 
-- Neovim 0.12, [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim), `curl`
-- An API key for the model you choose, or a local model server
+:SynopsisAsk ──► answer ──► map (one line per file, no model) ──┐
+                   ▲                                             ▼
+                   └──── ask (tool loop) ◄──► llm ◄──► tools (rg, read, outline)
+```
+
+| Module | Role |
+|---|---|
+| `telescope.lua` | Registers a Telescope layout, `synopsis`: the standard horizontal layout with a strip freed above the results for the pane. No fork of Telescope. |
+| `core.lua` | Decides what the pane shows for the previewed file, and when to request a summary: after a 1 s pause, at most 3 requests at a time. |
+| `prompt.lua`, `prompts/` | Builds the summary request: your background file, the repo's README and file list, then the file. |
+| `store.lua` | Caches one JSON file per summary outside the repo, with hashes of the file and the prompt, so a changed file's summary is marked outdated. |
+| `render.lua` | Lays out the summary in the pane: wrapped text, bullets and highlighted labels. |
+| `consent.lua`, `files.lua` | Records which repos may be sent, and which files may never be sent (exclude patterns, size limit, binary files). |
+| `llm.lua` | One request to any OpenAI-compatible chat endpoint, made with curl. It handles tool calls, cancelling, and OpenAI's prompt cache. |
+| `map.lua` | The repo map for questions: each file's leading comment (or docstring) and the names it defines, read with Tree-sitter, Neovim's built-in parser. It is built in small chunks and cached by file. |
+| `tools.lua` | The tools the model may call: `rg` (search with ripgrep), `read` (a range of lines), `outline` (a file's definitions with line numbers). They obey the same exclude and size rules. |
+| `ask.lua` | The question loop: up to 10 rounds of tool calls, then a final answer. It never blocks the editor, and supports cancelling and follow-up questions. |
+| `answer.lua` | The answer window: progress lines, the answer, opening citations, and a Telescope list of every cited location. |
+
+**Tech stack:**
+- The plugin is Lua on Neovim 0.12 (`vim.system`, `vim.uv` timers, floating windows,
+  Tree-sitter), with Telescope and plenary.
+- Requests go through curl, and searches through ripgrep.
+- The tests are headless Neovim talking to a fake chat server, and run on GitHub Actions.
+- The evaluations are written in Lua and Python, in `eval/`.
+
+## Design choices, and the evidence for them
+
+All measurements use GPT-6 Luna with reasoning off. Intervals are 95% bootstrap intervals,
+paired over the same files or questions. Details are in `eval/*/RESULTS.md`.
+
+- **Summaries are written in ASD-STE100 Simplified Technical English** (short sentences, one
+  fact each, common words), so they can be read in a few seconds.
+- **The shared start of each request is marked as a cache point.** Every file of a repo shares
+  the README and file list. OpenAI's automatic caching only stores a prompt up to the end of its
+  latest user message, so the shared part was never reused: 2 of 30 requests hit the cache.
+  Marking the shared part explicitly gave 27 of 30 hits and cut the median cost per summary to
+  0.32 [0.26, 0.40] of what it was.
+- **A hosted model by default.** I tested local models on a 16 GB M2 MacBook, using llama.cpp:
+  - The best, Qwen3.5 4B, took a median of 11–12 s per summary, compared with 1.4 s for GPT-6
+    Luna.
+  - Only 17 of 29 of its summaries were free of wrong claims, compared with 27 of 29 for Luna.
+  - Reading the prompt is the bottleneck on that hardware.
+
+  Local servers still work, as any OpenAI-compatible endpoint does.
+- **Questions are answered by reading code, not from summaries.** On 80 questions about 8
+  repos (Lua, Python and Rust, with 31 to 754 files), an LLM graded each answer for the facts a
+  correct answer needs. Answers from file summaries alone contained 0.36 of them. With tools to
+  search and read the code, they contained 0.79 [0.74, 0.83], and the share of answers with a
+  false claim fell from 30% to 16%.
+- **The repo map is built without a model.** A map built from comments and definition names
+  did as well as summaries written by the model: −0.01 [−0.04, +0.02]. It also did better than no
+  map: +0.04 [+0.00, +0.08], with fewer tool calls. It costs nothing to build and is never out
+  of date, so `:SynopsisAsk` needs no summaries at all.
+- **Things that did not help, and are left out:**
+  - Folder summaries and a repo overview added to the file summaries: +0.00 [−0.03, +0.03].
+  - Go-to-definition and find-references from a language server (LSP): offered, but the model
+    used them once in 240 answers, preferring `rg` and `read`.
+- **The released code is measured too.** The evaluation runs on the plugin's own modules. As
+  `:SynopsisAsk` runs, answers contained 0.74 [0.69, 0.79] of the required facts, and 15% had a
+  false claim. That is 0.03 [0.00, 0.06] below the earlier arm with the same map. A likely cause,
+  not yet tested, is that the path:line citations now count toward the 150-word limit on
+  answers.
+
+**Limits of this evidence:**
+- One model wrote the summaries, answered the questions and graded the answers, so any bias it
+  shares across those roles goes undetected. Hand checks of 7 random grades agreed with all 7.
+- The questions were written by agents reading the code, so people's own questions may differ.
+- The eight repos are well commented, which favours the map.
+
+## Current state
+
+Early. Both features work with Telescope's file and grep pickers and
+any OpenAI-compatible chat endpoint. Tested on macOS with Neovim 0.12.4 and Telescope commit
+`9377230`. GitHub Actions runs the 145 automated tests on Linux.
+
+## Future directions
+
+- Test whether excluding citations from the 150-word limit recovers the 0.03 lost in the
+  released code.
+- Questions about a highlighted passage, and a history of past questions.
+- Summaries in Telescope's results list, next to each file name.
+- An evaluation set of real questions asked while using the tool, to replace the
+  agent-written ones.
 
 ## Install
 
-With the built-in `vim.pack`:
+Requirements: Neovim 0.12, telescope.nvim, `curl` and `rg` (ripgrep), plus an API key for the
+model you choose or a local model server. With the built-in `vim.pack`:
 
 ```lua
 vim.pack.add {
@@ -45,9 +136,8 @@ vim.pack.add {
 require('synopsis').setup()
 ```
 
-Then give the pickers you want a summary pane the `synopsis` layout. It is Telescope's
-`horizontal` layout with the pane added above the results, and it accepts the same
-`layout_config` options:
+Give the pickers that should show a summary pane the `synopsis` layout. It accepts the same
+`layout_config` options as Telescope's `horizontal` layout:
 
 ```lua
 require('telescope').setup {
@@ -58,17 +148,24 @@ require('telescope').setup {
 }
 ```
 
+Map `:SynopsisAsk` to a key if you like:
+
+```lua
+vim.keymap.set('n', '<leader>sa', '<cmd>SynopsisAsk<cr>', { desc = 'Ask about this repo' })
+```
+
 The default model, GPT-6 Luna, needs an OpenAI API key in `OPENAI_API_KEY`.
 
 ## Before anything is sent
 
-The first time you preview a file without a summary in a repo, the pane asks whether that
-repo's files may be sent to the model provider. Ctrl-a allows it and Ctrl-o turns synopses off;
-the answer is remembered for that repo. Cached summaries are always shown, and nothing is sent until
-you answer. `:SynopsisAllow` and `:SynopsisDeny` change the answer for the current buffer's repo.
+The first time a repo would be sent, synopsis asks whether that repo's files may be sent to the
+model provider:
+- in the pane, Ctrl-a allows it and Ctrl-o refuses;
+- for `:SynopsisAsk`, a menu asks.
 
-For a local model server, where nothing leaves your machine, `setup { consent = 'always' }`
-turns the question off.
+The answer is remembered per repo, and `:SynopsisAllow` and `:SynopsisDeny` change it.
+Cached summaries are always shown. For a local model server, where nothing leaves your
+machine, `setup { consent = 'always' }` turns the question off.
 
 ## Keys
 
@@ -76,23 +173,11 @@ In the picker's prompt, in Insert and Normal mode:
 
 | Key | Action |
 |---|---|
-| Ctrl-e / Ctrl-y | Scroll the synopsis down / up half a page (the mouse wheel works too) |
+| Ctrl-e / Ctrl-y | Scroll the summary down / up half a page (the mouse wheel works too) |
 | Ctrl-a / Ctrl-o | Allow this repo's files to be sent / turn synopses off for this repo |
 
-Telescope's own keys scroll the preview (`<C-u>` / `<C-d>`) and the results (`<PageUp>` /
-`<PageDown>`).
-
-## Ask about the repo
-
-`:SynopsisAsk where is the request retried?` (or `:SynopsisAsk` alone, to be prompted) opens a
-window with the answer. Map it to a key in your config, for example:
-
-```lua
-vim.keymap.set('n', '<leader>sa', '<cmd>SynopsisAsk<cr>', { desc = 'Ask about this repo' })
-```
-
-While the model works, the window shows each step ("Searching `retry`", "Reading
-`lua/synopsis/llm.lua` 40–90"). The answer cites locations as `path:line`. In the window:
+In the `:SynopsisAsk` window, which shows each step while the model works ("Searching `retry`",
+"Reading `lua/synopsis/llm.lua` 40–90"):
 
 | Key | Action |
 |---|---|
@@ -101,23 +186,11 @@ While the model works, the window shows each step ("Searching `retry`", "Reading
 | `a` | Ask a follow-up question in the same conversation |
 | `q` / `<Esc>` | Close the window, and stop the request if one is running |
 
-The model starts from a map of the repo with one line per file: the file's leading comment (or
-docstring) and the names it defines, read with Tree-sitter, so building the map needs no model.
-It then searches the code with ripgrep, reads line ranges, and lists a file's definitions, for up to 10
-rounds of tool calls. It uses the same consent question, `exclude` patterns and `max_bytes` limit as
-the summaries, so excluded files are never searched or read.
-
-This design comes from an evaluation on 80 questions about 8 repos, with GPT-6 Luna
-(`eval/wiki/RESULTS.md`). As `:SynopsisAsk` runs them, answers contained 0.74 of the facts a
-correct answer needs [95% CI 0.69, 0.79], compared with 0.36 for answers from file summaries
-alone; 15% of answers contained a false claim. In the same evaluation, the map did as well as
-summaries written by a model, and better than no map.
-
 ## Tell it who you are
 
-Summaries are pitched at the reader described in `~/.config/butwhy/background.md`, the same file
-[butwhy.nvim](https://github.com/aaholmes/butwhy.nvim) uses; set `background` to use another
-path. Specific topics work better than job titles:
+Summaries are pitched at the reader described in `~/.config/butwhy/background.md`, the file
+[butwhy.nvim](https://github.com/aaholmes/butwhy.nvim) also uses; set `background` to use
+another path. Specific topics work better than job titles:
 
 ```markdown
 # Reader background
@@ -189,32 +262,31 @@ The pane's colours come from these highlight groups:
 
 ## What is sent, and what it costs
 
-For each summary, the request contains:
+A summary request contains:
 - your background file;
 - the first 150 lines of the repo's README;
 - the repo's file list (up to 400 paths);
 - the file itself (cut at 40,000 characters).
 
-Binary files, files over `max_bytes` and files matching `exclude` are never sent; the pane says
-why.
+A question sends:
+- the file map (paths, leading comments and definition names);
+- then whatever the model searches for or reads, up to 200 lines per read.
 
-I measured cost and speed with GPT-6 Luna on 30 files from two small Neovim plugins and a
-Neovim config (2026-11-08). The README and file list, which every file of a repo shares, are
-read from OpenAI's cache after the repo's first file. A summary then cost a median of $0.00014
-(at $0.10 / $0.50 per million tokens in / out), about a third of the cost without the cache.
-At the median, previewing every file of a 1,000-file repo would cost about $0.14. The model
-replied in a median of 1.3 s after the one-second pause. `eval/` holds the scripts, so you can
-repeat the measurement on your own files.
+Files over `max_bytes`, binary files and files matching `exclude` are never sent, searched or
+read.
 
-An answer to `:SynopsisAsk` sends the file map (paths, leading comments, definition names) and then
-whatever the model searches for or reads, up to 200 lines per read. In the evaluation, an answer
-took a median of 8 tool calls and 10.1 s, and cost a median of $0.0027; 1,000 questions would
-cost about $2.70.
+Measured with GPT-6 Luna (2026-11-08), at $0.10 / $0.50 per million tokens in / out:
+- **A summary:** a median of $0.00014 and 1.3 s after the pause, on 30 files from three small
+  repos. Previewing every file of a 1,000-file repo would cost about $0.14.
+- **An answer:** a median of 8 tool calls, 10.1 s and $0.0027, on the 80 evaluation questions.
+  1,000 questions would cost about $2.70.
 
-Summaries are stored as one JSON file per summarized file under Neovim's cache directory
+`eval/` holds the scripts, so you can repeat these measurements on your own files.
+
+Summaries are stored as one JSON file per file under Neovim's cache directory
 (`~/.cache/nvim/synopsis` on Linux and macOS), never in the repo. A summary is marked as
-outdated, and rewritten next time you stay on the file, when the file changes, or when the
-prompt, background file or model does.
+outdated, and rewritten the next time you stay on the file, when the file, the prompt, the
+background file or the model changes.
 
 ## Tests
 
