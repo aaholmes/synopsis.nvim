@@ -18,10 +18,14 @@ A summary that already exists appears immediately. A file without one gets one o
 stayed on it for a second; with the default model, the summary arrives about 1.3 s later.
 Summaries are cached outside the repo and marked as outdated when the file changes.
 
+`:SynopsisAsk` answers a question about the repo, such as "where is the request retried?" or
+"how does a file get its cache key?". The model searches and reads the code itself, and cites
+the lines it relies on; you can open them from the answer. See [Ask about the repo](#ask-about-the-repo).
+
 **Status:** early. Works with Telescope's file and grep pickers and any OpenAI-compatible chat
 endpoint. Tested on macOS with Neovim 0.12.4 and Telescope commit `9377230`; a GitHub Actions
-workflow runs the automated tests on Linux. Not yet available: summarizing a whole repo in one batch, summaries in the
-results list, summaries of folders.
+workflow runs the automated tests on Linux. Not yet available: summaries in the results list, questions about a visual
+selection, and a history of past questions.
 
 ## Requirements
 
@@ -78,6 +82,37 @@ In the picker's prompt, in Insert and Normal mode:
 Telescope's own keys scroll the preview (`<C-u>` / `<C-d>`) and the results (`<PageUp>` /
 `<PageDown>`).
 
+## Ask about the repo
+
+`:SynopsisAsk where is the request retried?` (or `:SynopsisAsk` alone, to be prompted) opens a
+window with the answer. Map it to a key in your config, for example:
+
+```lua
+vim.keymap.set('n', '<leader>sa', '<cmd>SynopsisAsk<cr>', { desc = 'Ask about this repo' })
+```
+
+While the model works, the window shows each step ("Searching `retry`", "Reading
+`lua/synopsis/llm.lua` 40–90"). The answer cites locations as `path:line`. In the window:
+
+| Key | Action |
+|---|---|
+| `<CR>` | Open the citation under the cursor |
+| `gl` | List every cited location in Telescope, previewed |
+| `a` | Ask a follow-up question in the same conversation |
+| `q` / `<Esc>` | Close the window, and stop the request if one is running |
+
+The model starts from a map of the repo with one line per file: the file's leading comment (or
+docstring) and the names it defines, read with Tree-sitter, so building the map needs no model.
+It then searches the code with ripgrep, reads line ranges, and lists a file's definitions, for up to 10
+rounds of tool calls. It uses the same consent question, `exclude` patterns and `max_bytes` limit as
+the summaries, so excluded files are never searched or read.
+
+This design comes from an evaluation on 80 questions about 8 repos, with GPT-6 Luna
+(`eval/wiki/RESULTS.md`). As `:SynopsisAsk` runs them, answers contained 0.74 of the facts a
+correct answer needs [95% CI 0.69, 0.79], compared with 0.36 for answers from file summaries
+alone; 15% of answers contained a false claim. In the same evaluation, the map did as well as
+summaries written by a model, and better than no map.
+
 ## Tell it who you are
 
 Summaries are pitched at the reader described in `~/.config/butwhy/background.md`, the same file
@@ -124,6 +159,11 @@ require('synopsis').setup {
   height = 0.6,           -- below 1: fraction of the left column; otherwise lines
   -- In the picker's prompt; false for none.
   keymaps = { scroll_up = '<C-y>', scroll_down = '<C-e>', allow = '<C-a>', deny = '<C-o>' },
+  ask = {
+    max_rounds = 10,         -- turns of tool calls before the model must answer
+    max_map_chars = 150000,  -- past this, files are listed in the map by path only
+    keymaps = { close = { 'q', '<Esc>' }, open = '<CR>', locations = 'gl', follow_up = 'a' },
+  },
 }
 ```
 
@@ -165,6 +205,11 @@ read from OpenAI's cache after the repo's first file. A summary then cost a medi
 At the median, previewing every file of a 1,000-file repo would cost about $0.14. The model
 replied in a median of 1.3 s after the one-second pause. `eval/` holds the scripts, so you can
 repeat the measurement on your own files.
+
+An answer to `:SynopsisAsk` sends the file map (paths, leading comments, definition names) and then
+whatever the model searches for or reads, up to 200 lines per read. In the evaluation, an answer
+took a median of 8 tool calls and 10.1 s, and cost a median of $0.0027; 1,000 questions would
+cost about $2.70.
 
 Summaries are stored as one JSON file per summarized file under Neovim's cache directory
 (`~/.cache/nvim/synopsis` on Linux and macOS), never in the repo. A summary is marked as

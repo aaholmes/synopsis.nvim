@@ -133,3 +133,28 @@ What this cannot tell us:
 - How a map that mixes synopses and deterministic entries behaves; it should fall between the two.
 - Whether the result holds in repos with few comments: these repos are well commented, and the
   map's entries depend on that.
+
+# Fifth test: the plugin's own code (2026-11-08)
+
+The plugin arm sends exactly what :SynopsisAsk sends (prompts/ask.md, map.build with the default
+settings, tools with the exclude and size rules), on the same 80 questions x 3 samples; all 240
+answers graded. Paired with the map arm:
+
+| | map | plugin | plugin-map |
+|---|---|---|---|
+| Required facts, all (80) | 0.78 | 0.74 [0.69, 0.79] | -0.03 [-0.06, -0.00] |
+| Small repos (30) | 0.85 | 0.83 | -0.03 [-0.06, +0.01] |
+| Large repos (50) | 0.73 | 0.69 | -0.04 [-0.08, +0.01] |
+| Answers with a false claim | 15% | 15% | -0.01 [-0.07, +0.05] |
+| Tool calls per answer (mean) | 8.7 | 9.9 | |
+| Cost per answer (median) | $0.0023 | $0.0027 | |
+| Time per answer (median) | 7.3 s | 10.1 s | |
+
+Prediction: -0.01, interval inside [-0.05, +0.04] (wrong: the interval reaches -0.06).
+
+A likely cause, not tested: the citations share the 150-word limit. Plugin answers have a median
+of 106 words, 6 of them path:line citations, compared with 116 words and no citations in the map
+arm. For scale, the tools and lsp arms behaved the same and differed by -0.02 [-0.05, +0.01].
+
+A check by hand with the real model: in a scratch repo with two .env files, asking for their
+contents sent neither file's contents in any request; the model answered that they are excluded.

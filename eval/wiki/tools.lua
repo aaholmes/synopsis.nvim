@@ -1,20 +1,10 @@
--- Code-reading tools for the wiki eval's model: rg, read, outline, and the language server's
--- definition and references. call(root, name, json_args) returns plain text, starting with
--- "error:" when something is wrong, so the model can see and correct its mistake.
-local T = { MAX_MATCHES = 50, MAX_LINES = 200, MAX_CHARS = 12000 }
+-- The plugin's code-reading tools (synopsis.tools) plus the language server's definition and
+-- references, for the wiki eval's lsp arm. The same interface as synopsis.tools: schemas,
+-- call and call_async; stop() ends the language servers.
+local P = require 'synopsis.tools'
+local T = setmetatable({}, { __index = P })
 
-local SCHEMAS = {
-  rg = { 'Search the repository with ripgrep (a regular expression, case-insensitive unless it has capitals). Returns path:line: text.',
-    { pattern = { type = 'string', description = 'Rust regex syntax' },
-      glob = { type = 'string', description = 'optional: limit to files matching this glob, e.g. "*.py" or "src/**"' } },
-    { 'pattern' } },
-  read = { 'Read lines of a file, numbered. At most 200 lines per call.',
-    { path = { type = 'string', description = 'relative to the repository root' },
-      start = { type = 'integer', description = 'first line, default 1' },
-      ['end'] = { type = 'integer', description = 'last line, default start + 199' } },
-    { 'path' } },
-  outline = { "List a file's functions, classes and other definitions with their line numbers.",
-    { path = { type = 'string', description = 'relative to the repository root' } }, { 'path' } },
+local LSP = {
   definition = { 'Find where a symbol is defined, using the language server. Give a file where the symbol appears.',
     { path = { type = 'string', description = 'a file that uses or defines the symbol' },
       symbol = { type = 'string', description = 'the identifier, e.g. "run" (not "a.run")' },
@@ -27,13 +17,17 @@ local SCHEMAS = {
     { 'path', 'symbol' } },
 }
 
----OpenAI function-tool definitions for the named tools, in the order given.
+---OpenAI function-tool definitions for the named tools, plugin tools and LSP tools alike.
 function T.schemas(names)
   local out = {}
   for _, n in ipairs(names) do
-    local s = assert(SCHEMAS[n], 'unknown tool ' .. n)
-    table.insert(out, { type = 'function', ['function'] = {
-      name = n, description = s[1], parameters = { type = 'object', properties = s[2], required = s[3] } } })
+    local s = LSP[n]
+    if s then
+      table.insert(out, { type = 'function', ['function'] = {
+        name = n, description = s[1], parameters = { type = 'object', properties = s[2], required = s[3] } } })
+    else
+      vim.list_extend(out, P.schemas { n })
+    end
   end
   return out
 end
@@ -42,14 +36,9 @@ local function realpath(p) return vim.uv.fs_realpath(p) or vim.fs.normalize(p) e
 
 ---The absolute path of `rel` inside root, or nil and a reason.
 local function inside(root, rel)
-  if type(rel) ~= 'string' or rel == '' then return nil, 'path is required' end
-  if rel:sub(1, 1) == '/' or rel:find '^~' then return nil, 'give a path relative to the repository root' end
-  for part in rel:gmatch '[^/]+' do if part == '..' then return nil, 'path must stay inside the repository' end end
-  local abs = realpath(root .. '/' .. rel)
-  local r = realpath(root)
-  if abs ~= r and abs:sub(1, #r + 1) ~= r .. '/' then return nil, 'path must stay inside the repository' end
-  if vim.fn.filereadable(abs) ~= 1 then return nil, 'no such file: ' .. rel end
-  return abs
+  local ok, abs = pcall(P.open, root, rel, {})
+  if ok then return abs end
+  return nil, (tostring(abs):gsub('^[^:]*:%d+: ', ''))
 end
 
 local function rel_of(root, abs)
@@ -62,49 +51,7 @@ local function lines_of(abs)
   local f = assert(io.open(abs, 'rb'))
   local text = f:read '*a'
   f:close()
-  if text:sub(1, 8192):find('\0', 1, true) then error 'binary file' end
-  return vim.split(text, '\n', { plain = true }), text
-end
-
-local function cap(list, what)
-  if #list <= T.MAX_MATCHES then return table.concat(list, '\n') end
-  local shown = vim.list_slice(list, 1, T.MAX_MATCHES)
-  return table.concat(shown, '\n') .. string.format('\n(%d more %s not shown)', #list - T.MAX_MATCHES, what)
-end
-
-function T.rg(root, a)
-  if type(a.pattern) ~= 'string' or a.pattern == '' then error 'pattern is required' end
-  local cmd = { 'rg', '--line-number', '--no-heading', '--color', 'never', '--smart-case', '--sort', 'path',
-    '--max-columns', '200', '--max-columns-preview' }
-  if a.glob and a.glob ~= '' then vim.list_extend(cmd, { '--glob', a.glob }) end
-  vim.list_extend(cmd, { '-e', a.pattern, '.' })
-  local res = vim.system(cmd, { cwd = root, text = true, stdin = false }):wait(30000)
-  if res.code == 1 then return 'no matches' end
-  if res.code ~= 0 then error(vim.trim(res.stderr or 'rg failed')) end
-  local out = {}
-  for line in res.stdout:gmatch '[^\n]+' do
-    local path, n, text = line:match '^%./(.-):(%d+):(.*)$'
-    if path then table.insert(out, string.format('%s:%s: %s', path, n, vim.trim(text))) end
-  end
-  return cap(out, 'matches')
-end
-
-function T.read(root, a)
-  local abs, why = inside(root, a.path)
-  if not abs then error(why) end
-  local lines = lines_of(abs)
-  if lines[#lines] == '' then table.remove(lines) end
-  local first = math.max(1, math.floor(tonumber(a.start) or 1))
-  local want = math.min(#lines, math.floor(tonumber(a['end']) or #lines))
-  local last = math.min(want, first + T.MAX_LINES - 1)
-  if first > #lines then error(string.format('the file has %d lines', #lines)) end
-  local out = {}
-  for i = first, last do table.insert(out, string.format('%d: %s', i, lines[i])) end
-  local text = table.concat(out, '\n')
-  if last < want then
-    text = text .. string.format('\n(lines %d-%d not shown; read again with start=%d)', last + 1, want, last + 1)
-  end
-  return text
+  return vim.split(text, '\n', { plain = true })
 end
 
 local function lang_of(abs)
@@ -112,65 +59,9 @@ local function lang_of(abs)
   return ft and vim.treesitter.language.get_lang(ft) or nil, ft
 end
 
-local DEFS = {
-  lua = { function_declaration = true },
-  python = { function_definition = true, class_definition = true },
-  rust = { function_item = true, function_signature_item = true, struct_item = true, enum_item = true, trait_item = true,
-    impl_item = true, mod_item = true, macro_definition = true, type_item = true },
-}
-
-function T.outline(root, a)
-  local abs, why = inside(root, a.path)
-  if not abs then error(why) end
-  local lang = lang_of(abs)
-  if not lang or not DEFS[lang] or not pcall(vim.treesitter.language.add, lang) then
-    error('no outline for this file type; use read or rg')
-  end
-  local all, text = lines_of(abs)
-  local tree = vim.treesitter.get_string_parser(text, lang):parse()[1]
-  local out = {}
-  local function header(start_node, def)
-    local body = def:field('body')[1]
-    local params = def:field('parameters')[1]
-    local sr, sc = start_node:range()
-    local er, ec
-    if body then er, ec = body:range() elseif params then er, ec = select(3, params:range()) else er, ec = select(3, def:range()) end
-    local lines = vim.list_slice(all, sr + 1, er + 1)
-    lines[#lines] = lines[#lines]:sub(1, ec)
-    lines[1] = lines[1]:sub(sc + 1)
-    return vim.trim(table.concat(lines, ' '):gsub('%s+', ' ')):sub(1, 160), sr + 1
-  end
-  local function walk(node, depth)
-    for child in node:iter_children() do
-      local t = child:type()
-      local start_node, def = nil, nil
-      if DEFS[lang][t] then
-        start_node, def = child, child
-      elseif lang == 'lua' and t == 'function_definition' then
-        -- `M.f = function() ... end` or `local f = function() ... end`: named by the assignment.
-        local p = child:parent()
-        if p and p:type() == 'expression_list' then
-          local asg = p:parent()
-          if asg and asg:type() == 'assignment_statement' then
-            local decl = asg:parent()
-            start_node = decl and decl:type() == 'variable_declaration' and decl or asg
-            def = child
-          end
-        end
-      end
-      if def then
-        local h, row = header(start_node, def)
-        table.insert(out, string.format('%d: %s%s', row, string.rep('  ', depth), h))
-        walk(child, depth + 1)
-      else
-        walk(child, depth)
-      end
-    end
-  end
-  walk(tree:root(), 0)
-  if #out == 0 then return 'no definitions found' end
-  if #out > 300 then out = vim.list_slice(out, 1, 300); table.insert(out, '(more definitions not shown)') end
-  return table.concat(out, '\n')
+local function cap(list, what)
+  if #list <= P.MAX_MATCHES then return table.concat(list, '\n') end
+  return table.concat(vim.list_slice(list, 1, P.MAX_MATCHES), '\n') .. string.format('\n(%d more %s not shown)', #list - P.MAX_MATCHES, what)
 end
 
 -- Language servers: one client per (root, language), started on first use.
@@ -311,15 +202,21 @@ function T.stop()
 end
 
 ---Run tool `name` with JSON-encoded `args` in root; always returns text.
-function T.call(root, name, args)
-  local fn = SCHEMAS[name] and T[name]
-  if not fn then return 'error: unknown tool ' .. tostring(name) end
+function T.call(root, name, args, opts)
+  if not LSP[name] then return P.call(root, name, args, opts) end
   local ok, a = pcall(vim.json.decode, args ~= '' and args or '{}')
   if not ok or type(a) ~= 'table' then return 'error: arguments are not a JSON object' end
-  local ok2, out = pcall(fn, root, a)
+  local ok2, out = pcall(T[name], root, a)
   if not ok2 then return 'error: ' .. tostring(out):gsub('^[^:]*:%d+: ', '') end
-  if #out > T.MAX_CHARS then out = out:sub(1, T.MAX_CHARS) .. '\n(output cut here)' end
+  if #out > P.MAX_CHARS then out = out:sub(1, P.MAX_CHARS) .. '\n(output cut here)' end
   return out
+end
+
+function T.call_async(root, name, args, opts, cb)
+  if not LSP[name] then return P.call_async(root, name, args, opts, cb) end
+  local out = T.call(root, name, args, opts)
+  vim.schedule(function() cb(out) end)
+  return function() end
 end
 
 return T

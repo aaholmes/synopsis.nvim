@@ -114,3 +114,14 @@ As in the first test, graded the same way, plus paired differences tools-files a
   two arms (~9.5). Cost close to the tools arm.
 - Cannot tell apart: the paths from the definitions and comments (no paths-only arm), or how a
   mix of synopses and map entries behaves.
+
+# Fifth test: the plugin's own code (written before any answer)
+
+- Arm plugin: exactly what :SynopsisAsk sends, through the plugin's modules: prompts/ask.md
+  (the map arm's prompt, asking for path:line citations with the full path), map.build with the
+  default settings (exclude, 100 KB limit, 150,000-character cap), and the tools with the same
+  exclude and size rules. Same 80 questions x 3 samples; paired with the map arm.
+- Prediction: plugin-map -0.01, interval inside [-0.05, +0.04]: the citation format should not
+  change what the model finds. Slightly more tokens per answer (longer citations).
+- Cannot tell apart: the prompt change from the map's differences (the map now covers every
+  tracked file, not the files the synopses were written for).

@@ -6,6 +6,7 @@
 -- Returns a handle: cancel() stops the run; follow_up(question, on_done) asks again in the same
 -- conversation. o.tool_opts ({ exclude, max_bytes }) is passed to the tools; o.retry_ms is the
 -- first wait after a rate-limit error (HTTP 429), doubled on each of up to 8 retries.
+-- o.toolset replaces tools.lua (any table with schemas and call_async), e.g. for the eval.
 local llm = require 'synopsis.llm'
 local T = require 'synopsis.tools'
 local M = {}
@@ -14,7 +15,8 @@ function M.start(o)
   local user = o.context .. '\nQUESTION: ' .. o.question
   local messages, extra = llm.prepare(o.cfg, { { role = 'system', content = o.system }, { role = 'user', content = user } },
     o.context, o.key)
-  extra.tools = T.schemas(o.tools)
+  local tools = o.toolset or T
+  extra.tools = tools.schemas(o.tools)
   local retry_ms = o.retry_ms or 2000
   local handle, stop = {}, nil -- stop() cancels whatever is running now
   local cancelled, finish = false, nil
@@ -36,7 +38,7 @@ function M.start(o)
       local fn = c['function'] or {}
       local args = fn.arguments or '{}'
       if o.on_call then o.on_call { name = fn.name, args = args } end
-      stop = T.call_async(o.root, fn.name, args, o.tool_opts or {}, function(out)
+      stop = tools.call_async(o.root, fn.name, args, o.tool_opts or {}, function(out)
         if cancelled then return end
         table.insert(r.calls, { name = fn.name, args = args, chars = #out })
         table.insert(messages, { role = 'tool', tool_call_id = c.id, content = out })
