@@ -1,0 +1,58 @@
+# Are file synopses enough to answer questions about a repo, or do folder synopses help?
+
+Written 2026-11-08, before any synopsis, folder synopsis or answer was generated.
+
+## Setting
+- Repos: synopsis (39 files), butwhy (31), the Neovim config (36). Every tracked text file gets a
+  synopsis from GPT-6 Luna with the plugin's prompt (`fill.lua`).
+- Questions: 30, 10 per repo, written by separate agents from the code alone, before any
+  synopsis existed: 4 "where", 4 "how" (spanning 2+ files), 2 "structure". Each has a gold
+  answer and 2-4 required facts.
+- Folder synopses, bottom-up, from the synopses of a folder's files and subfolders; one repo
+  overview from the top folder (`folders.lua`). Luna writes them.
+
+## Arms (GPT-6 Luna answers from text only; no code reading; 3 samples per question)
+- A: file list + every file's synopsis.
+- B: A + folder synopses + the repo overview.
+- C: A + synopses from another repo, cut to the length B adds (controls for extra tokens).
+
+## Measured
+- Share of required facts present (Luna grades, blind to the arm); answers with a wrong claim.
+- Paired differences B-A and B-C, 95% bootstrap over questions (the 3 samples averaged).
+
+## Predictions
+- A covers ~65% of required facts; "how" questions lowest (~50%), "where" highest (~80%).
+- B-A: +0.03, with an interval that includes 0. These repos are small enough (31-39 files) that
+  the whole list of file synopses is ~2,500 tokens, so the model already sees the structure.
+  Largest gain, if any, on "structure" questions.
+- C-A: ~0. Wrong-claim rates similar across arms (~20% of answers).
+
+## What this cannot tell us
+- Whether folder synopses help on large repos (hundreds of files), where a folder level matters
+  most. A null result here does not carry over.
+- Whether answers would be better with code access (tools); this tests the map alone.
+- Luna writes the synopses, answers and grades: a shared bias goes undetected.
+
+## Added before any answer was generated: two larger repos
+
+- neurosymbolic-mcts (348 files: Rust, CUDA, Python) and codecompanion.nvim (754 files, public),
+  10 questions each, written the same way. Total 50 questions.
+- Prediction: on these two, B-A is larger, about +0.08, because the full list of file synopses
+  is 20,000-45,000 tokens and the folder level gives the model a structure it must otherwise
+  assemble. On the three small repos, the prediction above (+0.03) stands. Results are reported
+  per group (small: 30 questions; large: 20), as well as pooled.
+
+## Added before any large-repo answer was generated: two Python repos
+
+- llms (152 files, mostly Python) and semistoch_attn (302 files: 128 Python, 151 JSON results),
+  10 questions each, written the same way, so the large group is 4 repos and 40 questions, and
+  the set is no longer mostly Lua. Total 70 questions.
+- Prediction for these two: as for the other large repos, B-A about +0.08. The JSON results files
+  in semistoch_attn add many near-identical synopses; I expect folder synopses to help most
+  there, by summarizing a results folder in one line.
+
+## Added before any large-repo answer was generated: risq
+
+- risq (352 files: 53 Rust; most of the rest is rustdoc's generated HTML and JS in docs/), 10
+  questions, written the same way. Large group: 5 repos, 50 questions; total 80.
+- Prediction: B-A about +0.08, as for the other large repos.
