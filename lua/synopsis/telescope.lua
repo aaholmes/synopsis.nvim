@@ -98,25 +98,48 @@ function M.scroll(dir)
   vim.api.nvim_win_call(pane.win, function() vim.cmd('normal! ' .. n .. vim.keycode(dir > 0 and '<C-e>' or '<C-y>')) end)
 end
 
----Hook the pane into Telescope for `core`. `keymaps` ({ scroll_up, scroll_down, allow, deny },
+---Close the picker and open the :SynopsisAsk chat about its selected file; closing the chat
+---reopens the picker where it was.
+function M.ask_about(prompt, picker)
+  local entry = require('telescope.actions.state').get_selected_entry()
+  if not entry then return end
+  local name = entry.path or entry.filename or (type(entry.value) == 'string' and entry.value) or nil
+  if not name then return end
+  if not name:match '^/' then name = vim.fs.joinpath(picker.cwd or vim.fn.getcwd(), name) end
+  name = vim.fs.normalize(vim.fn.resolve(name))
+  local root = vim.fs.root(name, '.git') or vim.fs.dirname(name)
+  local rel = vim.fs.relpath(root, name) or vim.fs.basename(name)
+  require('telescope.actions').close(prompt)
+  vim.schedule(function()
+    require('synopsis.answer').open {
+      root = root, config = require('synopsis').config, about = { path = rel, line = entry.lnum },
+      on_close = function() require('telescope.builtin').resume() end,
+    }
+  end)
+end
+
+---Hook the pane into Telescope for `core`. `keymaps` ({ scroll_up, scroll_down, allow, deny, ask },
 ---any of them false to skip it) are mapped in the prompt buffer of each picker with the pane.
 function M.attach(core, keymaps)
   M.keymaps = keymaps or {}
   local group = vim.api.nvim_create_augroup('synopsis', { clear = true })
-  vim.api.nvim_create_autocmd('User', {
+  -- Keys and clean-up are set up when each prompt buffer is created, so they do not depend on a
+  -- preview being shown (a picker without one, or a resumed picker whose preview is cached).
+  vim.api.nvim_create_autocmd('FileType', {
     group = group,
-    pattern = 'TelescopePreviewerLoaded',
+    pattern = 'TelescopePrompt',
     callback = function(ev)
-      local picker, prompt = current_picker()
-      if not (picker and picker._synopsis and picker.layout_strategy == 'synopsis') then return end
-      local first = pane.picker ~= picker
-      open_pane(picker)
-      if first then
+      local prompt = ev.buf
+      vim.schedule(function()
+        if not vim.api.nvim_buf_is_valid(prompt) then return end
+        local ok, picker = pcall(require('telescope.actions.state').get_current_picker, prompt)
+        if not (ok and picker and picker.layout_strategy == 'synopsis') then return end
         local actions = {
           scroll_down = { function() M.scroll(1) end, 'scroll the synopsis down' },
           scroll_up = { function() M.scroll(-1) end, 'scroll the synopsis up' },
           allow = { function() core:decide 'allow' end, "send this repo's files for synopses" },
           deny = { function() core:decide 'deny' end, 'turn synopses off for this repo' },
+          ask = { function() M.ask_about(prompt, picker) end, 'ask about this file' },
         }
         for name, action in pairs(actions) do
           local lhs = M.keymaps[name]
@@ -141,7 +164,16 @@ function M.attach(core, keymaps)
             end)
           end,
         })
-      end
+      end)
+    end,
+  })
+  vim.api.nvim_create_autocmd('User', {
+    group = group,
+    pattern = 'TelescopePreviewerLoaded',
+    callback = function(ev)
+      local picker = current_picker()
+      if not (picker and picker._synopsis and picker.layout_strategy == 'synopsis') then return end
+      open_pane(picker)
       local name = ev.data and ev.data.bufname
       if not name or name == '' then return core:leave() end
       if not name:match '^/' then name = vim.fs.joinpath(picker.cwd or vim.fn.getcwd(), name) end

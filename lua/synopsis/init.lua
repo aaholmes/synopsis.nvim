@@ -39,15 +39,22 @@ local defaults = {
   -- uses <C-u>/<C-d> for the preview and <PageUp>/<PageDown> for the results); allow / deny
   -- answer whether this repo's files may be sent. Ctrl keys rather than Alt keys, because many
   -- macOS terminals send Option as a character, not as Alt.
-  keymaps = { scroll_up = '<C-y>', scroll_down = '<C-e>', allow = '<C-a>', deny = '<C-o>' },
+  -- ask opens the :SynopsisAsk chat about the selected file.
+  keymaps = { scroll_up = '<C-y>', scroll_down = '<C-e>', allow = '<C-a>', deny = '<C-o>', ask = '<C-g>' },
   -- :SynopsisAsk. The model gets a map of the repo's files (leading comments and definition
   -- names, built without a model) and tools to search and read the code, for up to max_rounds
-  -- turns of tool calls. Files past max_map_chars are listed by path only. Keys in the answer
-  -- window; false for none.
+  -- turns of tool calls. Files past max_map_chars are listed by path only. render: draw the
+  -- chat's markdown and LaTeX with markview.nvim and snacks.nvim when they are installed.
+  -- Keys: close, open, locations and input in the conversation; chat and scroll_* in the input
+  -- panel, where <CR> sends; false for none.
   ask = {
     max_rounds = 10,
     max_map_chars = 150000,
-    keymaps = { close = { 'q', '<Esc>' }, open = '<CR>', locations = 'gl', follow_up = 'a' },
+    render = true,
+    keymaps = {
+      close = { 'q', '<Esc>' }, open = '<CR>', locations = 'gl', input = { 'i', 'a', '<C-j>' },
+      chat = '<C-k>', scroll_down = '<C-e>', scroll_up = '<C-y>',
+    },
   },
 }
 
@@ -73,12 +80,8 @@ function M.setup(opts)
 
   vim.api.nvim_create_user_command('SynopsisAsk', function(o)
     local root = vim.fs.normalize(vim.fn.resolve(repo()))
-    local function go(q)
-      if q and vim.trim(q) ~= '' then require('synopsis.answer').ask { root = root, question = vim.trim(q), config = M.config } end
-    end
-    if o.args ~= '' then return go(o.args) end
-    vim.ui.input({ prompt = 'Ask about ' .. vim.fs.basename(root) .. ': ' }, go)
-  end, { nargs = '*', desc = "Answer a question about this buffer's repo" })
+    require('synopsis.answer').open { root = root, question = o.args ~= '' and o.args or nil, config = M.config }
+  end, { nargs = '*', desc = "Open a chat about this buffer's repo, asking the question if one is given" })
 
   vim.api.nvim_create_user_command('SynopsisClear', function()
     local store = require 'synopsis.store'

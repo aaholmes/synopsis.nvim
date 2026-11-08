@@ -1,5 +1,6 @@
--- The :SynopsisAsk window: progress lines, the answer, opening cited locations, closing, and
--- the consent question. Uses the mock chat endpoint.
+-- The :SynopsisAsk chat: a conversation window with an input panel below it, progress lines,
+-- answers, opening cited locations, closing, rendering hooks and the consent question. Uses the
+-- mock chat endpoint.
 local H = dofile 'tests/harness.lua'
 local mock = dofile 'tests/mock_llm.lua'
 local answer = require 'synopsis.answer'
@@ -18,17 +19,43 @@ local function config(server, over)
   return vim.tbl_deep_extend('force', {
     llm = { url = server.url, model = 'm', api_key_env = 'SYNOPSIS_TEST_KEY', params = {}, timeout_ms = 5000 },
     consent = 'always', exclude = { '.env' }, max_bytes = 100 * 1024,
-    ask = { max_rounds = 4, max_map_chars = 150000, retry_ms = 10,
-      keymaps = { close = { 'q', '<Esc>' }, open = '<CR>', locations = 'gl', follow_up = 'a' } },
+    ask = { max_rounds = 4, max_map_chars = 150000, retry_ms = 10, render = true,
+      keymaps = { close = { 'q', '<Esc>' }, open = '<CR>', locations = 'gl', input = { 'i', 'a', '<C-j>' }, chat = '<C-k>',
+        scroll_down = '<C-e>', scroll_up = '<C-y>' } },
   }, over or {})
 end
-local function text() return table.concat(vim.api.nvim_buf_get_lines(answer.current.buf, 0, -1, false), '\n') end
-local function has(part) return answer.current and vim.api.nvim_buf_is_valid(answer.current.buf) and text():find(part, 1, true) ~= nil end
-local function done() return answer.current and answer.current.result ~= nil end
+local function cur() return answer.current end
+local function lines() return vim.api.nvim_buf_get_lines(cur().buf, 0, -1, false) end
+local function text() return table.concat(lines(), '\n') end
+local function has(part) return cur() and vim.api.nvim_buf_is_valid(cur().buf) and text():find(part, 1, true) ~= nil end
+local function idle() return cur() and cur().pending == false and cur().asked end
 local function reset()
-  if answer.current and vim.api.nvim_win_is_valid(answer.current.win) then answer.close() end
+  if cur() and not cur().closed then answer.close() end
   vim.cmd 'silent! only'
   vim.cmd 'enew!'
+end
+---Run the buffer-local mapping for `lhs` in `mode` on buf, as pressing the key would.
+local function press(buf, mode, lhs)
+  for _, m in ipairs(vim.api.nvim_buf_get_keymap(buf, mode)) do
+    if vim.keycode(m.lhs) == vim.keycode(lhs) then return m.callback() end
+  end
+  error('no mapping for ' .. lhs .. ' in mode ' .. mode)
+end
+---Type `s` into the input panel and press <CR>.
+local function type_question(s)
+  vim.api.nvim_set_current_win(cur().input_win)
+  vim.api.nvim_buf_set_lines(cur().input_buf, 0, -1, false, { s })
+  press(cur().input_buf, 'i', '<CR>')
+end
+---The highlight group on row (0-based) of the chat buffer, from the plugin's own namespace.
+local function hl_at(row)
+  local ns = vim.api.nvim_get_namespaces()['synopsis.answer']
+  for _, m in ipairs(vim.api.nvim_buf_get_extmarks(cur().buf, ns, { row, 0 }, { row, -1 }, { details = true })) do
+    if m[4].hl_group then return m[4].hl_group end
+  end
+end
+local function row_of(part)
+  for i, l in ipairs(lines()) do if l:find(part, 1, true) then return i - 1, l end end
 end
 
 local repo = H.make_repo {
@@ -37,24 +64,125 @@ local repo = H.make_repo {
   ['.env'] = 'KEY=1\n',
 }
 
-H.check('the window shows each tool call as it starts, then the answer', function()
+H.check('each tool call is shown as it starts, then the answer replaces them', function()
   reset()
   local server = mock.start({ tool_reply(call('c1', 'rg', { pattern = 'hi' })), 'It is in a.lua:3.' }, { delay_ms = 200 })
-  answer.ask { root = repo, question = 'Where is hi?', config = config(server) }
-  H.eq(vim.api.nvim_win_get_config(answer.current.win).relative ~= '', true, 'floating')
+  answer.open { root = repo, question = 'Where is hi?', config = config(server) }
+  H.eq(vim.api.nvim_win_get_config(cur().win).relative ~= '', true, 'floating')
   vim.wait(3000, function() return has 'Searching `hi`' end, 10)
   H.eq(has 'Searching `hi`', true, text())
-  vim.wait(3000, done, 10)
+  vim.wait(3000, idle, 10)
   H.eq(has 'It is in a.lua:3.', true, text())
-  H.eq(has 'Where is hi?', true, 'question shown')
-  H.eq(has '1 tool call', true, 'footer')
+  H.eq(has 'Searching', false, 'progress removed')
+end)
+
+H.check('questions get a coloured bar; answers, progress and footer are indented; the footer is muted', function()
+  reset()
+  local server = mock.start({ tool_reply(call('c1', 'rg', { pattern = 'hi' })), 'Line one.\n- a bullet' }, { delay_ms = 200 })
+  answer.open { root = repo, question = 'Where is hi?', config = config(server) }
+  vim.wait(3000, function() return has 'Searching' end, 10)
+  local prow = row_of 'Searching'
+  H.eq(hl_at(prow), 'SynopsisProgress', 'progress colour')
+  vim.wait(3000, idle, 10)
+  local qrow, q = row_of 'Where is hi?'
+  H.eq(q, '▌ Where is hi?', 'question line')
+  H.eq(hl_at(qrow), 'SynopsisQuestion', 'question colour')
+  H.eq(select(2, row_of 'Line one.'), '  Line one.', 'answer indented')
+  H.eq(select(2, row_of 'a bullet'), '  - a bullet', 'bullet indented')
+  local frow, f = row_of 'tool call'
+  H.eq(f:match '^  1 tool call · [%d.]+ s · [%d,]+ tokens$' ~= nil, true, f)
+  H.eq(f:find('_', 1, true), nil, 'no underscores')
+  H.eq(hl_at(frow), 'SynopsisMeta', 'footer colour')
+end)
+
+H.check('LaTeX written as \\( \\) or \\[ \\] is shown with dollar signs, outside code only', function()
+  H.eq(answer.dollars [[It uses \(D_{KL}(p\,\|\,q)\) and \[x^2\].]], [[It uses $D_{KL}(p\,\|\,q)$ and $$x^2$$.]], 'inline and display')
+  H.eq(answer.dollars [[Code `\(x\)` stays, \(y\) does not.]], [[Code `\(x\)` stays, $y$ does not.]], 'code span')
+  H.eq(answer.dollars '\\[\nx = 1\n\\]', '$$\nx = 1\n$$', 'display block on its own lines')
+  H.eq(answer.dollars '```\n\\(x\\)\n```', '```\n\\(x\\)\n```', 'code block')
+end)
+
+H.check('token counts get thousands separators', function()
+  H.eq(answer.thousands(7208), '7,208', 'four digits')
+  H.eq(answer.thousands(1234567), '1,234,567', 'seven digits')
+  H.eq(answer.thousands(12), '12', 'two digits')
+end)
+
+H.check('the highlight groups default to the colour scheme: blue and bold for questions, muted for the rest', function()
+  answer.highlights()
+  local q = vim.api.nvim_get_hl(0, { name = 'SynopsisQuestion' })
+  local fn = vim.api.nvim_get_hl(0, { name = 'Function', link = false })
+  H.eq(q.bold, true, 'bold')
+  H.eq(q.fg, fn.fg, 'Function colour')
+  H.eq(vim.api.nvim_get_hl(0, { name = 'SynopsisMeta' }).link, 'Comment', 'meta')
+  H.eq(vim.api.nvim_get_hl(0, { name = 'SynopsisProgress' }).link, 'Comment', 'progress')
+end)
+
+H.check('an input panel sits below the chat, as wide, and has the focus', function()
+  reset()
+  local server = mock.start 'A.'
+  answer.open { root = repo, config = config(server) }
+  local c = vim.api.nvim_win_get_config(cur().win)
+  local i = vim.api.nvim_win_get_config(cur().input_win)
+  H.eq(i.relative ~= '', true, 'floating')
+  H.eq(i.row, c.row + c.height + 2, 'directly below')
+  H.eq(i.width, c.width, 'same width')
+  H.eq(vim.api.nvim_get_current_win(), cur().input_win, 'focus')
+end)
+
+H.check('with no question, the chat shows a hint and sends nothing until you type', function()
+  reset()
+  local server = mock.start 'First.'
+  answer.open { root = repo, config = config(server) }
+  vim.wait(300)
+  H.eq(#server.requests, 0, 'nothing sent')
+  H.eq(has('Ask about ' .. vim.fs.basename(repo)), true, text())
+  type_question 'Q1?'
+  vim.wait(3000, idle, 10)
+  H.eq(has '▌ Q1?', true, text())
+  H.eq(has 'First.', true, 'answer')
+  H.eq(has 'Ask about', false, 'hint removed')
+  H.eq(table.concat(vim.api.nvim_buf_get_lines(cur().input_buf, 0, -1, false), ''), '', 'input cleared')
+end)
+
+H.check('a question typed in the panel follows up in the same conversation', function()
+  reset()
+  local server = mock.start { 'First.', 'Second.' }
+  answer.open { root = repo, question = 'Q1?', config = config(server) }
+  vim.wait(3000, idle, 10)
+  type_question 'Q2?'
+  vim.wait(3000, function() return has 'Second.' end, 10)
+  H.eq(has 'First.' and has '▌ Q2?' and has 'Second.', true, text())
+  H.eq(#server.requests[2].body.messages, 4, 'earlier conversation sent')
+end)
+
+H.check('sending while an answer is coming sends nothing and says so', function()
+  reset()
+  local server = mock.start({ 'Slow.' }, { delay_ms = 400 })
+  answer.open { root = repo, question = 'Q1?', config = config(server) }
+  vim.wait(100)
+  type_question 'Q2?'
+  H.eq(vim.api.nvim_win_get_config(cur().input_win).title[1][1]:find('waiting', 1, true) ~= nil, true, 'title')
+  vim.wait(2000, idle, 10)
+  vim.wait(200)
+  H.eq(#server.requests, 1, 'one request')
+end)
+
+H.check('<C-k> moves from the input to the chat, and i moves back', function()
+  reset()
+  local server = mock.start 'A.'
+  answer.open { root = repo, config = config(server) }
+  press(cur().input_buf, 'i', '<C-k>')
+  H.eq(vim.api.nvim_get_current_win(), cur().win, 'chat')
+  press(cur().buf, 'n', 'i')
+  H.eq(vim.api.nvim_get_current_win(), cur().input_win, 'input')
 end)
 
 H.check('the map sent to the model lists the files, and excluded files by path only', function()
   reset()
   local server = mock.start 'Answer.'
-  answer.ask { root = repo, question = 'Q?', config = config(server) }
-  vim.wait(3000, done, 10)
+  answer.open { root = repo, question = 'Q?', config = config(server) }
+  vim.wait(3000, idle, 10)
   local user = server.requests[1].body.messages[2].content
   if type(user) == 'table' then user = user[1].text .. user[2].text end
   H.eq(user:find('a.lua: Says hi. Defines: M.hi', 1, true) ~= nil, true, user)
@@ -63,17 +191,31 @@ H.check('the map sent to the model lists the files, and excluded files by path o
   H.eq(vim.endswith(user, 'QUESTION: Q?'), true, 'question last')
 end)
 
+H.check('a chat about a file tells the model which file, in the first question only', function()
+  reset()
+  local server = mock.start { 'A1.', 'A2.' }
+  answer.open { root = repo, config = config(server), about = { path = 'a.lua', line = 3 } }
+  H.eq(has 'Asking about `a.lua`', true, text())
+  type_question 'How does it work?'
+  vim.wait(3000, idle, 10)
+  local user = server.requests[1].body.messages[2].content
+  if type(user) == 'table' then user = user[1].text .. user[2].text end
+  H.eq(user:find('QUESTION: (asked while viewing a.lua, line 3) How does it work?', 1, true) ~= nil, true, user)
+  H.eq(has '▌ How does it work?', true, 'shown as typed')
+  type_question 'And then?'
+  vim.wait(3000, function() return has 'A2.' end, 10)
+  H.eq(server.requests[2].body.messages[4].content, 'And then?', 'follow-up plain')
+end)
+
 H.check('<CR> on a path:line citation opens that file at that line', function()
   reset()
   local server = mock.start 'The function is at a.lua:3 in the repo.'
-  answer.ask { root = repo, question = 'Q?', config = config(server) }
-  vim.wait(3000, done, 10)
-  local lines = vim.api.nvim_buf_get_lines(answer.current.buf, 0, -1, false)
-  for i, l in ipairs(lines) do
-    local col = l:find('a.lua:3', 1, true)
-    if col then vim.api.nvim_win_set_cursor(answer.current.win, { i, col + 1 }) end
-  end
-  vim.api.nvim_feedkeys(vim.keycode '<CR>', 'x', false)
+  answer.open { root = repo, question = 'Q?', config = config(server) }
+  vim.wait(3000, idle, 10)
+  local row, l = row_of 'a.lua:3'
+  vim.api.nvim_set_current_win(cur().win)
+  vim.api.nvim_win_set_cursor(cur().win, { row + 1, l:find('a.lua:3', 1, true) + 1 })
+  press(cur().buf, 'n', '<CR>')
   H.eq(vim.fs.basename(vim.api.nvim_buf_get_name(0)), 'a.lua', 'file')
   H.eq(vim.api.nvim_win_get_cursor(0)[1], 3, 'line')
 end)
@@ -88,10 +230,10 @@ end)
 H.check('gl opens a Telescope picker of the cited locations', function()
   reset()
   local server = mock.start 'See a.lua:3 and b.lua:1.'
-  answer.ask { root = repo, question = 'Q?', config = config(server) }
-  vim.wait(3000, done, 10)
-  vim.api.nvim_set_current_win(answer.current.win)
-  vim.api.nvim_feedkeys('gl', 'x', false)
+  answer.open { root = repo, question = 'Q?', config = config(server) }
+  vim.wait(3000, idle, 10)
+  vim.api.nvim_set_current_win(cur().win)
+  press(cur().buf, 'n', 'gl')
   local prompt
   vim.wait(2000, function()
     for _, b in ipairs(vim.api.nvim_list_bufs()) do
@@ -103,27 +245,76 @@ H.check('gl opens a Telescope picker of the cited locations', function()
   require('telescope.actions').close(prompt)
 end)
 
-H.check('q closes the window and cancels the request in flight', function()
+H.check('q in the chat closes both windows and cancels the request in flight', function()
   reset()
   local server = mock.start({ tool_reply(call('c1', 'read', { path = 'a.lua' })), 'Late.' }, { delay_ms = 300 })
-  answer.ask { root = repo, question = 'Q?', config = config(server) }
-  local win = answer.current.win
+  answer.open { root = repo, question = 'Q?', config = config(server) }
+  local win, input = cur().win, cur().input_win
   vim.wait(100)
   vim.api.nvim_set_current_win(win)
-  vim.api.nvim_feedkeys('q', 'x', false)
-  H.eq(vim.api.nvim_win_is_valid(win), false, 'closed')
+  press(cur().buf, 'n', 'q')
+  H.eq(vim.api.nvim_win_is_valid(win), false, 'chat closed')
+  H.eq(vim.api.nvim_win_is_valid(input), false, 'input closed')
   vim.wait(1000)
   H.eq(#server.requests <= 1, true, 'no further request')
 end)
 
-H.check('a follow-up question is answered below the first answer', function()
+H.check('closing the input panel closes the chat too, and calls on_close', function()
   reset()
-  local server = mock.start { 'First.', 'Second.' }
-  answer.ask { root = repo, question = 'Q1?', config = config(server) }
-  vim.wait(3000, done, 10)
-  answer.follow_up 'Q2?'
-  vim.wait(3000, function() return has 'Second.' end, 10)
-  H.eq(has 'First.' and has 'Q2?' and has 'Second.', true, text())
+  local server = mock.start 'A.'
+  local closed = 0
+  answer.open { root = repo, config = config(server), on_close = function() closed = closed + 1 end }
+  local win = cur().win
+  vim.api.nvim_win_close(cur().input_win, true)
+  vim.wait(100)
+  H.eq(vim.api.nvim_win_is_valid(win), false, 'chat closed')
+  H.eq(closed, 1, 'on_close once')
+end)
+
+H.check('opening a citation does not call on_close', function()
+  reset()
+  local server = mock.start 'See a.lua:3.'
+  local closed = 0
+  answer.open { root = repo, question = 'Q?', config = config(server), on_close = function() closed = closed + 1 end }
+  vim.wait(3000, idle, 10)
+  local row = row_of 'a.lua:3'
+  vim.api.nvim_set_current_win(cur().win)
+  vim.api.nvim_win_set_cursor(cur().win, { row + 1, 8 })
+  press(cur().buf, 'n', '<CR>')
+  vim.wait(100)
+  H.eq(closed, 0, 'not called')
+end)
+
+H.check('the chat is rendered with markview when it is loaded, and the event fires', function()
+  reset()
+  local calls = {}
+  package.loaded.markview = { strict_render = {
+    clear = function(_, b) table.insert(calls, 'clear ' .. b) end,
+    render = function(_, b) table.insert(calls, 'render ' .. b) end,
+  } }
+  local fired
+  vim.api.nvim_create_autocmd('User', { pattern = 'SynopsisAnswerRendered', once = true, callback = function(ev) fired = ev.data end })
+  local server = mock.start 'With $x^2$.'
+  answer.open { root = repo, question = 'Q?', config = config(server) }
+  vim.wait(3000, idle, 10)
+  local buf = cur().buf
+  H.eq(vim.tbl_contains(calls, 'render ' .. buf), true, vim.inspect(calls))
+  H.eq(vim.wo[cur().win].conceallevel, 2, 'conceallevel')
+  H.eq(fired and fired.buf, buf, 'event')
+  answer.close()
+  H.eq(calls[#calls], 'clear ' .. buf, 'cleared on close')
+  package.loaded.markview = nil
+end)
+
+H.check('render = false leaves markview alone', function()
+  reset()
+  local calls = 0
+  package.loaded.markview = { strict_render = { clear = function() end, render = function() calls = calls + 1 end } }
+  local server = mock.start 'A.'
+  answer.open { root = repo, question = 'Q?', config = config(server, { ask = { render = false } }) }
+  vim.wait(3000, idle, 10)
+  H.eq(calls, 0, 'not rendered')
+  package.loaded.markview = nil
 end)
 
 H.check('a repo marked deny sends nothing and opens no window', function()
@@ -132,7 +323,7 @@ H.check('a repo marked deny sends nothing and opens no window', function()
   local r = H.make_repo { ['x.lua'] = 'return 1\n' }
   consent.set(r, 'deny')
   answer.current = nil
-  answer.ask { root = r, question = 'Q?', config = config(server, { consent = 'ask' }) }
+  answer.open { root = r, question = 'Q?', config = config(server, { consent = 'ask' }) }
   vim.wait(300)
   H.eq(answer.current, nil, 'no window')
   H.eq(#server.requests, 0, 'nothing sent')
@@ -145,9 +336,9 @@ H.check('an undecided repo asks first; allowing records it and sends', function(
   local orig = vim.ui.select
   local asked
   vim.ui.select = function(items, opts, cb) asked = opts.prompt; cb(items[1]) end
-  answer.ask { root = r, question = 'Q?', config = config(server, { consent = 'ask' }) }
+  answer.open { root = r, question = 'Q?', config = config(server, { consent = 'ask' }) }
   vim.ui.select = orig
-  vim.wait(3000, done, 10)
+  vim.wait(3000, idle, 10)
   H.eq(type(asked), 'string', 'asked')
   H.eq(consent.get(r), 'allow', 'recorded')
   H.eq(#server.requests, 1, 'sent')
@@ -159,8 +350,8 @@ H.check('a folder that is not a git repo works too', function()
   local dir = vim.fs.normalize(vim.fn.resolve(vim.fn.tempname()))
   vim.fn.mkdir(dir, 'p')
   vim.fn.writefile({ '-- Plain.' }, dir .. '/p.lua')
-  answer.ask { root = dir, question = 'Q?', config = config(server) }
-  vim.wait(3000, done, 10)
+  answer.open { root = dir, question = 'Q?', config = config(server) }
+  vim.wait(3000, idle, 10)
   local user = server.requests[1].body.messages[2].content
   if type(user) == 'table' then user = user[1].text .. user[2].text end
   H.eq(user:find('p.lua: Plain.', 1, true) ~= nil, true, user)
