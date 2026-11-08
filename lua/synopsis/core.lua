@@ -14,6 +14,7 @@ local store = require 'synopsis.store'
 local consent = require 'synopsis.consent'
 local prompt = require 'synopsis.prompt'
 local llm = require 'synopsis.llm'
+local files = require 'synopsis.files'
 
 local Core = {}
 Core.__index = Core
@@ -25,16 +26,7 @@ local M = {}
 function M.new(opts)
   local self = setmetatable({ opts = opts, pending = {}, queue = {}, active = 0 }, Core)
   self.timer = assert(vim.uv.new_timer())
-  self.exclude = vim.tbl_map(function(g) return vim.glob.to_lpeg(g) end, opts.exclude or {})
   return self
-end
-
-local function read_file(path)
-  local f = io.open(path, 'rb')
-  if not f then return nil end
-  local text = f:read '*a'
-  f:close()
-  return text
 end
 
 ---The repo root and path relative to it: the nearest directory holding .git, else the
@@ -54,20 +46,8 @@ function Core:render(path, kind, text, host)
 end
 
 ---Why `path` must not be sent, or nil if it may be. Returns the file text when it may.
-function Core:check(path, rel)
-  local stat = vim.uv.fs_stat(path)
-  if not stat or stat.type ~= 'file' then return 'not a file' end
-  local base = vim.fs.basename(path)
-  for _, pat in ipairs(self.exclude) do
-    if pat:match(base) or pat:match(rel) then return 'excluded by the exclude setting' end
-  end
-  if stat.size > self.opts.max_bytes then
-    return string.format('too large (%d KB; the limit is %d KB)', math.ceil(stat.size / 1024), math.floor(self.opts.max_bytes / 1024))
-  end
-  local text = read_file(path)
-  if not text then return 'could not be read' end
-  if text:sub(1, 8192):find('\0', 1, true) then return 'binary file' end
-  return nil, text
+function Core:check(root, rel)
+  return files.skip_reason(root, rel, self.opts)
 end
 
 ---Called whenever the picker previews `path`.
@@ -76,7 +56,7 @@ function Core:preview(path)
   self.current = path
   local root, rel = locate(path)
   self.current_root = root
-  local reason, text = self:check(path, rel)
+  local reason, text = self:check(root, rel)
   if reason then return self:render(path, 'skipped', reason) end
 
   local job = {
