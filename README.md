@@ -16,13 +16,15 @@ things:
   describe it.
 - **Answers about the repo.** `:SynopsisAsk`, or Ctrl-g on a file in Telescope, opens a chat
   about the repo. The model finds each answer by searching and reading the code itself, and
-  cites the lines it relied on as `path:line`, which you can open from the answer. Markdown and
+  cites the lines it relied on as `path:line`. A pane beside the chat shows the cited lines,
+  highlighted, and each repo's conversation is kept for the editor session. Markdown and
   LaTeX in answers are rendered when [markview.nvim](https://github.com/OXY2DEV/markview.nvim)
   and [snacks.nvim](https://github.com/folke/snacks.nvim) are installed.
 
 ## Goals
 
-- **Answers you can check.** Every answer cites locations, and one key opens them.
+- **Answers you can check.** Every answer cites locations, and the cited lines are shown beside
+  the answer as you move through it.
 - **Fast enough not to interrupt browsing.** A cached summary appears immediately, and a new one
   about 1.3 s after a one-second pause on the file.
 - **Cheap enough to leave on.** A summary costs a median of $0.00014 and an answer $0.0027, with
@@ -55,8 +57,8 @@ Telescope preview ──► core ──► store (cached summary?) ──► ren
 | `llm.lua` | One request to any OpenAI-compatible chat endpoint, made with curl. It handles tool calls, cancelling, and OpenAI's prompt cache. |
 | `map.lua` | The repo map for questions: each file's leading comment (or docstring) and the names it defines, read with Tree-sitter, Neovim's built-in parser. It is built in small chunks and cached by file. |
 | `tools.lua` | The tools the model may call: `rg` (search with ripgrep), `read` (a range of lines), `outline` (a file's definitions with line numbers). They obey the same exclude and size rules. |
-| `ask.lua` | The question loop: up to 10 rounds of tool calls, then a final answer. It never blocks the editor, and supports cancelling and follow-up questions. |
-| `answer.lua` | The chat: the conversation window and an input panel below it, progress lines, opening citations, a Telescope list of every cited location, and rendering with markview and snacks (LaTeX written as `\(…\)` or `\[…\]` is rewritten with dollar signs, which they recognise). |
+| `ask.lua` | The question loop: up to 10 rounds of tool calls, then a final answer. It never blocks the editor. A conversation holds the messages across questions; cancelling a question restores them to how they were before it, so the conversation can go on. |
+| `answer.lua` | The chat: one session per repo, kept while Neovim runs; the conversation, input panel and preview pane; progress lines; moving between citations and opening them; a Telescope list of every cited location; and rendering with markview and snacks (LaTeX written as `\(…\)` or `\[…\]` is rewritten with dollar signs, which they recognise). |
 
 **Tech stack:**
 - The plugin is Lua on Neovim 0.12 (`vim.system`, `vim.uv` timers, floating windows,
@@ -102,12 +104,16 @@ paired over the same files or questions. Details are in `eval/*/RESULTS.md`.
   false claim. That is 0.03 [0.00, 0.06] below the earlier arm with the same map. A likely cause,
   not yet tested, is that the path:line citations now count toward the 150-word limit on
   answers.
-
-- **The chat is its own window, not part of Telescope.** Telescope closes a picker as soon as
-  the focus leaves its prompt, and typing a question needs the focus elsewhere. So Ctrl-g closes
-  the picker and opens the chat, and closing the chat reopens the picker with the same query
-  and selection. Keeping the chat inside Telescope would mean removing Telescope's own close
-  handler, which depends on its internals.
+- **The chat has its own windows, not Telescope's.** Telescope closes a picker as soon as the
+  focus leaves its prompt, and typing a question needs the focus elsewhere. So Ctrl-g closes the
+  picker and opens the chat, laid out like Telescope: conversation on the left, cited lines on
+  the right. Closing the chat reopens the picker with the same query and selection. Keeping the
+  chat inside Telescope would mean removing Telescope's own close handler, which depends on its
+  internals.
+- **One conversation per repo, not per file.** Questions asked while browsing usually build on
+  each other, so Ctrl-g on a second file continues the chat, and the model is told the new file
+  once. A cancelled question is removed from the messages, because a request that ends in an
+  unanswered tool call is rejected by the API.
 
 **Limits of this evidence:**
 - One model wrote the summaries, answered the questions and graded the answers, so any bias it
@@ -119,16 +125,13 @@ paired over the same files or questions. Details are in `eval/*/RESULTS.md`.
 
 Early. Both features work with Telescope's file and grep pickers and any OpenAI-compatible chat
 endpoint. Tested on macOS with Neovim 0.12.4 and Telescope commit `9377230`. GitHub Actions runs
-the 160 automated tests on Linux.
+the 178 automated tests on Linux.
 
 ## Future directions
 
 - Test whether excluding citations from the 150-word limit recovers the 0.03 lost in the
   released code.
-- Keep each repo's conversation for the session, so Ctrl-g on another file continues it.
-- A preview pane beside the chat that shows a citation's lines, highlighted, as you move
-  between citations.
-- Questions about a highlighted passage, and a history of past chats.
+- Questions about a highlighted passage, and chats saved across Neovim sessions.
 - Summaries in Telescope's results list, next to each file name.
 - An evaluation set of real questions asked while using the tool, to replace the
   agent-written ones.
@@ -186,13 +189,21 @@ In the picker's prompt, in Insert and Normal mode:
 |---|---|
 | Ctrl-e / Ctrl-y | Scroll the summary down / up half a page (the mouse wheel works too) |
 | Ctrl-a / Ctrl-o | Allow this repo's files to be sent / turn synopses off for this repo |
-| Ctrl-g | Ask about the selected file: closes the picker and opens the chat; closing the chat reopens the picker where it was |
+| Ctrl-g | Ask about the selected file: closes the picker and opens the repo's chat; closing the chat reopens the picker where it was |
 
-The `:SynopsisAsk` chat has two windows: the conversation, and an input panel below it, which
-has the focus when the chat opens. Questions are shown with a coloured bar. While the model
-works, its steps appear as muted lines ("Searching `retry`", "Reading `lua/synopsis/llm.lua`
-40–90"), and each answer ends with a muted line giving its tool calls, time and tokens. A chat
-opened from Telescope tells the model which file you were viewing.
+The `:SynopsisAsk` chat has three windows:
+- **the conversation.** Questions have a coloured bar. While the model works, its steps appear
+  as muted lines ("Searching `retry`", "Reading `lua/synopsis/llm.lua` 40–90"), and each answer
+  ends with a muted line giving its tool calls, time and tokens.
+- **an input panel** below it, which has the focus when the chat opens.
+- **a preview pane** on the right, on screens at least 120 columns wide. It shows the citation
+  under the cursor with the cited lines highlighted, and each new answer's first citation.
+  Files that are never sent (see `exclude`) are never shown.
+
+Each repo keeps its conversation until you quit Neovim. Reopening the chat, or Ctrl-g on another
+file, continues it; a muted "Now viewing `b.lua`" line marks the change of file. Closing the chat
+while an answer is coming stops the request and shows "Cancelled."; that question is dropped
+from what the model sees.
 
 In the input panel:
 
@@ -201,6 +212,7 @@ In the input panel:
 | `<CR>` | Send the question (ignored while an answer is still coming) |
 | `<C-k>` | Move to the conversation |
 | `<C-e>` / `<C-y>` | Scroll the conversation down / up half a page |
+| `<C-n>` | Start a new chat for this repo |
 | `q` (Normal mode) / `<C-c>` | Close the chat, and stop the request if one is running |
 
 In the conversation:
@@ -208,9 +220,13 @@ In the conversation:
 | Key | Action |
 |---|---|
 | `<CR>` | Open the citation under the cursor |
+| `<Tab>` / `<S-Tab>` | Move to the next / previous citation and preview it, wrapping around |
 | `gl` | List every cited location in Telescope, previewed |
 | `i` / `a` / `<C-j>` | Move to the input panel |
+| `<C-n>` | Start a new chat for this repo |
 | `q` / `<Esc>` | Close the chat, and stop the request if one is running |
+
+Clicking a citation previews it. In the preview, `<CR>` opens the file at the cursor's line.
 
 ## Tell it who you are
 
@@ -262,10 +278,14 @@ require('synopsis').setup {
     max_rounds = 10,         -- turns of tool calls before the model must answer
     max_map_chars = 150000,  -- past this, files are listed in the map by path only
     render = true,           -- render the chat with markview.nvim and snacks.nvim, if installed
-    -- close, open, locations and input in the conversation; chat and scroll_* in the input panel
+    preview = true,          -- the pane of cited lines beside the chat
+    preview_min_columns = 120, -- narrower screens get no preview
+    -- close, open, locations, input and *_citation in the conversation; chat and scroll_* in
+    -- the input panel; new_chat in both
     keymaps = {
       close = { 'q', '<Esc>' }, open = '<CR>', locations = 'gl', input = { 'i', 'a', '<C-j>' },
-      chat = '<C-k>', scroll_down = '<C-e>', scroll_up = '<C-y>',
+      chat = '<C-k>', scroll_down = '<C-e>', scroll_up = '<C-y>', new_chat = '<C-n>',
+      next_citation = '<Tab>', prev_citation = '<S-Tab>',
     },
   },
 }
@@ -290,6 +310,7 @@ The colours come from these highlight groups, which follow your colour scheme by
 | `SynopsisMessage` | Status lines such as "Writing a synopsis…" | `Comment` |
 | `SynopsisQuestion` | Questions in the chat | `Function`'s colour, bold |
 | `SynopsisProgress`, `SynopsisMeta`, `SynopsisHint` | The chat's progress lines, footers and hint | `Comment` |
+| `SynopsisCited` | The cited lines in the preview | `Visual` |
 
 After each change to the chat, synopsis fires `User SynopsisAnswerRendered` with `{ buf, win }`,
 for other markdown renderers; set `ask.render = false` to turn off the built-in rendering.

@@ -45,15 +45,20 @@ local defaults = {
   -- names, built without a model) and tools to search and read the code, for up to max_rounds
   -- turns of tool calls. Files past max_map_chars are listed by path only. render: draw the
   -- chat's markdown and LaTeX with markview.nvim and snacks.nvim when they are installed.
-  -- Keys: close, open, locations and input in the conversation; chat and scroll_* in the input
-  -- panel, where <CR> sends; false for none.
+  -- preview: a pane on the right showing the cited lines, on screens at least
+  -- preview_min_columns wide. Each repo's conversation is kept for the editor session.
+  -- Keys: close, open, locations, input, next_citation and prev_citation in the conversation;
+  -- chat and scroll_* in the input panel, where <CR> sends; new_chat in both; false for none.
   ask = {
     max_rounds = 10,
     max_map_chars = 150000,
     render = true,
+    preview = true,
+    preview_min_columns = 120,
     keymaps = {
       close = { 'q', '<Esc>' }, open = '<CR>', locations = 'gl', input = { 'i', 'a', '<C-j>' },
-      chat = '<C-k>', scroll_down = '<C-e>', scroll_up = '<C-y>',
+      chat = '<C-k>', scroll_down = '<C-e>', scroll_up = '<C-y>', new_chat = '<C-n>',
+      next_citation = '<Tab>', prev_citation = '<S-Tab>',
     },
   },
 }

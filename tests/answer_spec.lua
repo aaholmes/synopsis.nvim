@@ -19,9 +19,9 @@ local function config(server, over)
   return vim.tbl_deep_extend('force', {
     llm = { url = server.url, model = 'm', api_key_env = 'SYNOPSIS_TEST_KEY', params = {}, timeout_ms = 5000 },
     consent = 'always', exclude = { '.env' }, max_bytes = 100 * 1024,
-    ask = { max_rounds = 4, max_map_chars = 150000, retry_ms = 10, render = true,
+    ask = { max_rounds = 4, max_map_chars = 150000, retry_ms = 10, render = true, preview = true, preview_min_columns = 120,
       keymaps = { close = { 'q', '<Esc>' }, open = '<CR>', locations = 'gl', input = { 'i', 'a', '<C-j>' }, chat = '<C-k>',
-        scroll_down = '<C-e>', scroll_up = '<C-y>' } },
+        scroll_down = '<C-e>', scroll_up = '<C-y>', new_chat = '<C-n>', next_citation = '<Tab>', prev_citation = '<S-Tab>' } },
   }, over or {})
 end
 local function cur() return answer.current end
@@ -31,6 +31,7 @@ local function has(part) return cur() and vim.api.nvim_buf_is_valid(cur().buf) a
 local function idle() return cur() and cur().pending == false and cur().asked end
 local function reset()
   if cur() and not cur().closed then answer.close() end
+  answer.sessions = {}
   vim.cmd 'silent! only'
   vim.cmd 'enew!'
 end
@@ -62,7 +63,10 @@ local repo = H.make_repo {
   ['a.lua'] = '-- Says hi.\nlocal M = {}\nfunction M.hi() return "hi" end\nreturn M\n',
   ['b.lua'] = 'return 2\n',
   ['.env'] = 'KEY=1\n',
+  ['doc.md'] = '# Doc\n\nIt is $x^2$.\n',
 }
+local function user_text(m) return type(m.content) == 'table' and (m.content[1].text .. m.content[2].text) or m.content end
+local function last_request(server) return server.requests[#server.requests].body end
 
 H.check('each tool call is shown as it starts, then the answer replaces them', function()
   reset()
@@ -355,6 +359,195 @@ H.check('a folder that is not a git repo works too', function()
   local user = server.requests[1].body.messages[2].content
   if type(user) == 'table' then user = user[1].text .. user[2].text end
   H.eq(user:find('p.lua: Plain.', 1, true) ~= nil, true, user)
+end)
+
+-- Conversations kept per repo.
+H.check('closing and reopening the chat for the same repo continues the conversation', function()
+  reset()
+  local server = mock.start { 'A1.', 'A2.' }
+  answer.open { root = repo, question = 'Q1?', config = config(server) }
+  vim.wait(3000, idle, 10)
+  answer.close()
+  answer.open { root = repo, config = config(server) }
+  H.eq(has '▌ Q1?' and has 'A1.', true, text())
+  type_question 'Q2?'
+  vim.wait(3000, function() return has 'A2.' end, 10)
+  H.eq(#last_request(server).messages, 4, 'earlier conversation sent')
+end)
+
+H.check('reopened from another file, the chat says so and tells the model once', function()
+  reset()
+  local server = mock.start { 'A1.', 'A2.', 'A3.' }
+  answer.open { root = repo, question = 'Q1?', config = config(server), about = { path = 'a.lua' } }
+  vim.wait(3000, idle, 10)
+  answer.close()
+  answer.open { root = repo, config = config(server), about = { path = 'b.lua', line = 1 } }
+  H.eq(has 'Now viewing `b.lua`', true, text())
+  type_question 'Q2?'
+  vim.wait(3000, function() return has 'A2.' end, 10)
+  H.eq(vim.startswith(last_request(server).messages[4].content, '(asked while viewing b.lua, line 1) Q2?'), true,
+    last_request(server).messages[4].content)
+  type_question 'Q3?'
+  vim.wait(3000, function() return has 'A3.' end, 10)
+  H.eq(last_request(server).messages[6].content, 'Q3?', 'told once')
+end)
+
+H.check('a question cancelled by closing is shown as cancelled and left out of the conversation', function()
+  reset()
+  local server = mock.start({ 'Never.', 'A2.' }, { delay_ms = 300 })
+  answer.open { root = repo, question = 'Q1?', config = config(server) }
+  vim.wait(150)
+  answer.close()
+  answer.open { root = repo, config = config(server) }
+  H.eq(has 'Cancelled.', true, text())
+  type_question 'Q2?'
+  vim.wait(3000, function() return has 'A2.' end, 10)
+  local msgs = last_request(server).messages
+  H.eq(#msgs, 2, 'only the new question')
+  H.eq(user_text(msgs[2]):find('Q1?', 1, true), nil, 'cancelled question left out')
+end)
+
+H.check('<C-n> starts a new conversation', function()
+  reset()
+  local server = mock.start { 'A1.', 'A2.' }
+  answer.open { root = repo, question = 'Q1?', config = config(server) }
+  vim.wait(3000, idle, 10)
+  press(cur().input_buf, 'i', '<C-n>')
+  H.eq(has 'Q1?', false, text())
+  type_question 'Q2?'
+  vim.wait(3000, function() return has 'A2.' end, 10)
+  H.eq(#last_request(server).messages, 2, 'fresh')
+end)
+
+H.check('each repo has its own conversation', function()
+  reset()
+  local server = mock.start 'A1.'
+  answer.open { root = repo, question = 'Q1?', config = config(server) }
+  vim.wait(3000, idle, 10)
+  answer.close()
+  local other = H.make_repo { ['x.lua'] = 'return 1\n' }
+  answer.open { root = other, config = config(server) }
+  H.eq(has 'Q1?', false, text())
+end)
+
+-- The preview pane.
+local function wins()
+  local c, i = vim.api.nvim_win_get_config(cur().win), vim.api.nvim_win_get_config(cur().input_win)
+  local p = cur().preview_win and vim.api.nvim_win_is_valid(cur().preview_win) and vim.api.nvim_win_get_config(cur().preview_win)
+  return c, i, p
+end
+
+H.check('on a wide screen a preview pane sits to the right of the chat, as tall as chat and input', function()
+  reset()
+  local server = mock.start 'A.'
+  answer.open { root = repo, config = config(server) }
+  local c, i, p = wins()
+  H.eq(p and p.relative ~= '', true, 'preview open')
+  H.eq(p.col > c.col + c.width, true, 'to the right')
+  H.eq(p.row, c.row, 'tops aligned')
+  H.eq(p.height, c.height + i.height + 2, 'height')
+end)
+
+H.check('on a narrow screen, or with preview = false, there is no preview pane', function()
+  reset()
+  local server = mock.start 'A.'
+  vim.o.columns = 100
+  answer.open { root = repo, config = config(server) }
+  local narrow = select(3, wins())
+  vim.o.columns = 160
+  H.eq(not narrow, true, 'narrow')
+  reset()
+  answer.open { root = repo, config = config(server, { ask = { preview = false } }) }
+  H.eq(not select(3, wins()), true, 'turned off')
+end)
+
+local function cited_rows()
+  local ns = vim.api.nvim_get_namespaces()['synopsis.preview']
+  local rows = {}
+  for _, m in ipairs(vim.api.nvim_buf_get_extmarks(cur().preview_buf, ns, 0, -1, { details = true })) do
+    if m[4].line_hl_group == 'SynopsisCited' then table.insert(rows, m[2]) end
+  end
+  table.sort(rows)
+  return table.concat(rows, ',')
+end
+local function preview_text() return table.concat(vim.api.nvim_buf_get_lines(cur().preview_buf, 0, -1, false), '\n') end
+
+H.check("an answer's first citation is previewed with its lines highlighted", function()
+  reset()
+  local server = mock.start 'See a.lua:2-3 and b.lua:1.'
+  answer.open { root = repo, question = 'Q?', config = config(server) }
+  vim.wait(3000, idle, 10)
+  H.eq(cur().preview_path, 'a.lua', 'file')
+  H.eq(vim.bo[cur().preview_buf].filetype, 'lua', 'filetype')
+  H.eq(cited_rows(), '1,2', 'lines 2-3 highlighted')
+  H.eq(vim.api.nvim_win_get_cursor(cur().preview_win)[1], 2, 'cursor')
+end)
+
+H.check('<Tab> and <S-Tab> move between citations, wrapping, and the preview follows', function()
+  reset()
+  local server = mock.start 'See a.lua:2-3 and b.lua:1.'
+  answer.open { root = repo, question = 'Q?', config = config(server) }
+  vim.wait(3000, idle, 10)
+  vim.api.nvim_set_current_win(cur().win)
+  vim.api.nvim_win_set_cursor(cur().win, { 1, 0 })
+  press(cur().buf, 'n', '<Tab>')
+  H.eq(cur().preview_path, 'a.lua', 'first')
+  press(cur().buf, 'n', '<Tab>')
+  H.eq(cur().preview_path, 'b.lua', 'second')
+  H.eq(cited_rows(), '0', 'b.lua line 1')
+  press(cur().buf, 'n', '<Tab>')
+  H.eq(cur().preview_path, 'a.lua', 'wrapped forward')
+  press(cur().buf, 'n', '<S-Tab>')
+  H.eq(cur().preview_path, 'b.lua', 'wrapped back')
+end)
+
+H.check('moving the cursor onto a citation previews it', function()
+  reset()
+  local server = mock.start 'See a.lua:2-3 and b.lua:1.'
+  answer.open { root = repo, question = 'Q?', config = config(server) }
+  vim.wait(3000, idle, 10)
+  local row, l = row_of 'b.lua:1'
+  vim.api.nvim_set_current_win(cur().win)
+  vim.api.nvim_win_set_cursor(cur().win, { row + 1, (l:find('b.lua:1', 1, true)) })
+  vim.api.nvim_exec_autocmds('CursorMoved', { buffer = cur().buf })
+  H.eq(cur().preview_path, 'b.lua', 'previewed')
+end)
+
+H.check('an excluded file is never shown in the preview', function()
+  reset()
+  local server = mock.start 'See .env:1.'
+  answer.open { root = repo, question = 'Q?', config = config(server) }
+  vim.wait(3000, idle, 10)
+  H.eq(preview_text():find('excluded by the exclude setting', 1, true) ~= nil, true, preview_text())
+  H.eq(preview_text():find('KEY=1', 1, true), nil, 'no secret')
+end)
+
+H.check('<CR> in the preview opens the file at its cursor line, without reopening Telescope', function()
+  reset()
+  local server = mock.start 'See a.lua:2-3.'
+  local closed = 0
+  answer.open { root = repo, question = 'Q?', config = config(server), on_close = function() closed = closed + 1 end }
+  vim.wait(3000, idle, 10)
+  vim.api.nvim_set_current_win(cur().preview_win)
+  press(cur().preview_buf, 'n', '<CR>')
+  vim.wait(100)
+  H.eq(vim.fs.basename(vim.api.nvim_buf_get_name(0)), 'a.lua', 'file')
+  H.eq(vim.api.nvim_win_get_cursor(0)[1], 2, 'line')
+  H.eq(closed, 0, 'on_close not called')
+end)
+
+H.check('a cited markdown file is rendered in the preview', function()
+  reset()
+  local calls = {}
+  package.loaded.markview = { strict_render = {
+    clear = function() end, render = function(_, b) table.insert(calls, b) end,
+  } }
+  local server = mock.start 'See doc.md:3.'
+  answer.open { root = repo, question = 'Q?', config = config(server) }
+  vim.wait(3000, idle, 10)
+  H.eq(cur().preview_path, 'doc.md', 'previewed')
+  H.eq(vim.tbl_contains(calls, cur().preview_buf), true, 'rendered')
+  package.loaded.markview = nil
 end)
 
 H.finish()

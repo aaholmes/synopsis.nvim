@@ -183,4 +183,27 @@ H.check('<C-g> in the prompt opens the chat about the selected file; closing it 
   close()
 end)
 
+H.check('Ctrl-g on another file continues the same conversation', function()
+  local answer = require 'synopsis.answer'
+  answer.sessions = {}
+  open()
+  vim.wait(1000, function() return find 'synopsis' ~= nil end, 10)
+  vim.fn.maparg('<C-g>', 'i', false, true).callback()
+  vim.wait(2000, function() return answer.current ~= nil and not answer.current.closed end, 10)
+  answer.send 'First question?'
+  vim.wait(3000, function() return answer.current.pending == false end, 10)
+  answer.close()
+  vim.wait(2000, function() return prompt_buf() ~= nil end, 10)
+  require('telescope.actions').move_selection_next(prompt_buf())
+  vim.wait(300)
+  vim.fn.maparg('<C-g>', 'i', false, true).callback()
+  vim.wait(2000, function() return answer.current ~= nil and not answer.current.closed end, 10)
+  local t = table.concat(vim.api.nvim_buf_get_lines(answer.current.buf, 0, -1, false), '\n')
+  H.eq(t:find('First question?', 1, true) ~= nil, true, t)
+  H.eq(t:find('Now viewing', 1, true) ~= nil, true, 'new file noted')
+  answer.close()
+  vim.wait(2000, function() return prompt_buf() ~= nil end, 10)
+  close()
+end)
+
 H.finish()
