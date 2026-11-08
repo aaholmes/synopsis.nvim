@@ -163,4 +163,69 @@ H.check('another set of tools can replace the built-in ones', function()
   H.eq(body.messages[4].content, 'custom zap', 'output')
 end)
 
+-- A conversation that outlives a cancelled question.
+local function convo(server)
+  return A.conversation { cfg = cfg(server), system = 'sys', context = 'CTX\n', root = repo, tools = { 'rg', 'read' }, max_rounds = 4 }
+end
+local function ask_wait(c, q)
+  local r
+  c:ask(q, { on_done = function(x) r = x end })
+  vim.wait(8000, function() return r ~= nil end, 10)
+  return assert(r, 'no result')
+end
+local function user_text(m) return type(m.content) == 'table' and (m.content[1].text .. m.content[2].text) or m.content end
+
+H.check('a conversation answers questions in turn, keeping the earlier ones', function()
+  local server = mock.start { 'A1.', 'A2.' }
+  local c = convo(server)
+  H.eq(ask_wait(c, 'Q1?').answer, 'A1.', 'first')
+  H.eq(ask_wait(c, 'Q2?').answer, 'A2.', 'second')
+  local msgs = server.requests[2].body.messages
+  H.eq(#msgs, 4, 'messages')
+  H.eq(user_text(msgs[2]), 'CTX\n\nQUESTION: Q1?', 'context with the first question')
+  H.eq(msgs[4].content, 'Q2?', 'second question')
+end)
+
+H.check('busy is true while a question runs', function()
+  local server = mock.start({ 'A.' }, { delay_ms = 200 })
+  local c = convo(server)
+  local r
+  c:ask('Q?', { on_done = function(x) r = x end })
+  H.eq(c:busy(), true, 'busy')
+  vim.wait(3000, function() return r ~= nil end, 10)
+  H.eq(c:busy(), false, 'idle')
+end)
+
+H.check('after a cancelled first question, the next question still carries the context', function()
+  local server = mock.start({ tool_reply(call('c1', 'read', { path = 'a.lua' })), 'Never.', 'A2.' }, { delay_ms = 300 })
+  local c = convo(server)
+  local r1
+  c:ask('Q1?', { on_done = function(x) r1 = x end })
+  vim.wait(450)
+  c:cancel()
+  H.eq(r1 and r1.cancelled, true, 'cancelled')
+  H.eq(c:busy(), false, 'idle')
+  H.eq(ask_wait(c, 'Q2?').answer, 'A2.', 'answered')
+  local msgs = server.requests[#server.requests].body.messages
+  H.eq(#msgs, 2, 'only system and the new question')
+  H.eq(user_text(msgs[2]), 'CTX\n\nQUESTION: Q2?', 'context kept')
+end)
+
+H.check('a question cancelled during tool calls leaves nothing behind for the next one', function()
+  local server = mock.start({ 'A1.', tool_reply(call('c1', 'read', { path = 'a.lua' })), 'Never.', 'A3.' }, { delay_ms = 300 })
+  local c = convo(server)
+  ask_wait(c, 'Q1?')
+  c:ask('Q2?', { on_done = function() end })
+  vim.wait(450)
+  c:cancel()
+  H.eq(ask_wait(c, 'Q3?').answer, 'A3.', 'answered')
+  local msgs = server.requests[#server.requests].body.messages
+  H.eq(#msgs, 4, 'system, Q1, A1, Q3')
+  H.eq(msgs[4].content, 'Q3?', 'new question last')
+  for _, m in ipairs(msgs) do
+    H.eq(m.tool_calls, nil, 'no tool calls left')
+    H.eq(m.content == 'Q2?', false, 'cancelled question dropped')
+  end
+end)
+
 H.finish()
