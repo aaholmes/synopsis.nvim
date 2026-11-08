@@ -51,7 +51,8 @@ end
 
 ---Messages for summarizing `opts.text`, the contents of `opts.relpath` in the repo at
 ---`opts.root`. `opts.background` is the reader background file; text beyond `opts.max_chars`
----(default 40000) is cut and marked as cut.
+---(default 40000) is cut and marked as cut. Also returns the start of the user turn that every
+---file of the repo shares (README and file list), so it can be marked for the provider's cache.
 function M.build(opts)
   local max_chars = opts.max_chars or 40000
   local content = opts.text
@@ -59,10 +60,17 @@ function M.build(opts)
     content = content:sub(1, max_chars) .. string.format('\n[... truncated: %d more characters not shown]', #opts.text - max_chars)
   end
   local ctx = repo_context(opts.root)
+  local values = { readme = ctx.readme, files = ctx.files, path = opts.relpath, content = content }
+  -- The shared part is the template up to the line holding the first per-file placeholder.
+  local t = template 'file'
+  local first = math.min(t:find('${path}', 1, true) or #t + 1, t:find('${content}', 1, true) or #t + 1)
+  local line_start = first
+  while line_start > 1 and t:sub(line_start - 1, line_start - 1) ~= '\n' do line_start = line_start - 1 end
+  local shared = fill(t:sub(1, line_start - 1), values)
   return {
     { role = 'system', content = fill(template 'system', { background = read(opts.background) or '(No background given: write for a general programmer.)' }) },
-    { role = 'user', content = fill(template 'file', { readme = ctx.readme, files = ctx.files, path = opts.relpath, content = content }) },
-  }
+    { role = 'user', content = shared .. fill(t:sub(line_start), values) },
+  }, shared
 end
 
 ---Identifies everything besides the file itself that shapes a summary, so a change to the

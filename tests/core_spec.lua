@@ -57,6 +57,39 @@ H.check('a missing summary is requested once after the delay, then shown and cac
   H.eq(store.read(root, 'a.lua').summary, 'Summary of A.', 'cached')
 end)
 
+H.check('requests carry a cache key made from the repo root, never the path itself', function()
+  local server = mock.start 'S.'
+  local c, root, views = setup(nil, server)
+  c:preview(root .. '/a.lua')
+  vim.wait(2000, function() return last(views).kind == 'summary' end, 10)
+  local key = server.requests[1].body.prompt_cache_key
+  H.eq(key, store.root_key(root), 'key')
+  H.eq(key:match '^%x+$' ~= nil and #key == 16, true, 'a 16-digit hash, not the path')
+end)
+
+H.check("cache = 'openai' sends the README and file list as a cached block", function()
+  local server = mock.start 'S.'
+  local c, root, views = setup(nil, server)
+  c.opts.llm.cache = 'openai'
+  c:preview(root .. '/a.lua')
+  vim.wait(2000, function() return last(views).kind == 'summary' end, 10)
+  local body = server.requests[1].body
+  local blocks = body.messages[2].content
+  H.eq(type(blocks), 'table', 'blocks')
+  H.eq(blocks[1].prompt_cache_breakpoint.mode, 'explicit', 'cache point')
+  H.eq(blocks[2].text:match '^FILE: a.lua' ~= nil, true, 'file in the second block')
+  H.eq(body.prompt_cache_options.mode, 'explicit', 'options')
+end)
+
+H.check('prompt_cache_key = false sends no cache key', function()
+  local server = mock.start 'S.'
+  local c, root, views = setup(nil, server)
+  c.opts.llm.prompt_cache_key = false
+  c:preview(root .. '/a.lua')
+  vim.wait(2000, function() return last(views).kind == 'summary' end, 10)
+  H.eq(server.requests[1].body.prompt_cache_key, nil, 'no key')
+end)
+
 H.check('leaving a file before the delay sends nothing', function()
   local server = mock.start 'unused'
   local c, root = setup(nil, server)

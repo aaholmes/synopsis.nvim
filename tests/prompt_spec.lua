@@ -21,6 +21,17 @@ H.check('messages are a system turn then a user turn', function()
   H.eq(m[2].role, 'user', 'second')
 end)
 
+H.check('the user turn starts with the part every file of the repo shares', function()
+  local m, shared = build()
+  H.eq(type(shared), 'string', 'shared part returned')
+  H.eq(m[2].content:sub(1, #shared), shared, 'user turn starts with it')
+  H.eq(shared:find('readme line 1', 1, true) ~= nil, true, 'README in it')
+  H.eq(shared:find('gen/f001.txt', 1, true) ~= nil, true, 'file list in it')
+  H.eq(m[2].content:sub(#shared + 1):match '^FILE: src/a.lua' ~= nil, true, 'rest starts with the file')
+  local _, other = build { relpath = 'gen/f001.txt', text = 'x' }
+  H.eq(other, shared, 'same for another file')
+end)
+
 H.check('the system turn includes the reader background', function()
   H.eq(build()[1].content:find('Lua, Neovim plugins', 1, true) ~= nil, true, 'background text')
 end)

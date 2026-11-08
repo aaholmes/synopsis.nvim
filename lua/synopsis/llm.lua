@@ -2,10 +2,38 @@
 -- passed on curl's stdin and the body in a temporary file, so neither shows up in `ps`.
 local M = {}
 
+local function uses_openai_cache(cfg)
+  if cfg.cache == 'openai' then return true end
+  return cfg.cache == 'auto' and (cfg.url or ''):match '^https://api%.openai%.com' ~= nil
+end
+
+---The messages and extra body fields for a request, given `shared`, the start of the last user
+---turn that other requests share, and `key`, a cache key for the repo.
+---With OpenAI's cache, that start becomes its own text block with a cache point, and caching is
+---limited to cache points: the rest of each prompt is used once, and writing it to the cache
+---would cost more than reading it normally.
+function M.prepare(cfg, messages, shared, key)
+  local extra = {}
+  if cfg.prompt_cache_key ~= false and key then extra.prompt_cache_key = key end
+  local last = messages[#messages]
+  if not (uses_openai_cache(cfg) and shared and shared ~= '' and type(last.content) == 'string'
+      and last.content:sub(1, #shared) == shared) then
+    return messages, extra
+  end
+  local out = vim.deepcopy(messages)
+  out[#out].content = {
+    { type = 'text', text = shared, prompt_cache_breakpoint = { mode = 'explicit' } },
+    { type = 'text', text = last.content:sub(#shared + 1) },
+  }
+  extra.prompt_cache_options = { mode = 'explicit' }
+  return out, extra
+end
+
 ---Send `messages` using `cfg` ({ url, chat_path?, model, api_key_env, params?, timeout_ms? })
 ---and call `callback(err, text, usage)` on the main loop with the reply text or an error
----message. usage is { prompt_tokens, completion_tokens, cached_tokens } when the server reports it.
-function M.request(cfg, messages, callback)
+---message. usage is { prompt_tokens, completion_tokens, cached_tokens, cache_write_tokens } when the server reports it.
+---`extra` holds more body fields for this request only.
+function M.request(cfg, messages, callback, extra)
   local done = vim.schedule_wrap(callback)
   local key
   if cfg.api_key_env then
@@ -13,7 +41,7 @@ function M.request(cfg, messages, callback)
     if not key or key == '' then return done(string.format('set $%s to generate synopses', cfg.api_key_env)) end
   end
 
-  local body = vim.tbl_extend('force', cfg.params or {}, { model = cfg.model, messages = messages, stream = false })
+  local body = vim.tbl_extend('force', cfg.params or {}, extra or {}, { model = cfg.model, messages = messages, stream = false })
   local body_file = vim.fn.tempname()
   local f = assert(io.open(body_file, 'wb'))
   f:write(vim.json.encode(body))
@@ -50,6 +78,7 @@ function M.request(cfg, messages, callback)
       prompt_tokens = u.prompt_tokens,
       completion_tokens = u.completion_tokens,
       cached_tokens = type(u.prompt_tokens_details) == 'table' and u.prompt_tokens_details.cached_tokens or nil,
+      cache_write_tokens = type(u.prompt_tokens_details) == 'table' and u.prompt_tokens_details.cache_write_tokens or nil,
       -- llama-server's own report: tokens reused from its cache (cache_n), read (prompt_n), times.
       timings = type(json.timings) == 'table' and json.timings or nil,
     }

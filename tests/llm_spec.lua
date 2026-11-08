@@ -35,11 +35,53 @@ H.check('sends the model, params and messages with the key, and returns the repl
   H.eq(vim.deep_equal(req.body.messages, messages), true, 'messages')
 end)
 
+H.check('extra body fields are sent alongside the params', function()
+  local server = mock.start 'A.'
+  local got
+  llm.request(cfg(server), messages, function(err) got = err or true end, { prompt_cache_key = 'k1' })
+  vim.wait(6000, function() return got ~= nil end, 10)
+  vim.wait(500, function() return #server.requests == 1 end)
+  H.eq(server.requests[1].body.prompt_cache_key, 'k1', 'extra field')
+  H.eq(server.requests[1].body.reasoning_effort, 'none', 'params kept')
+end)
+
+local built = { { role = 'system', content = 'sys' }, { role = 'user', content = 'SHAREDfile' } }
+
+H.check("cache = 'openai' marks the shared part with a cache point and caches only there", function()
+  local m, extra = llm.prepare({ url = 'http://x', cache = 'openai' }, built, 'SHARED', 'k1')
+  local blocks = m[2].content
+  H.eq(type(blocks), 'table', 'user turn split into blocks')
+  H.eq(blocks[1].type .. blocks[1].text, 'textSHARED', 'shared block')
+  H.eq(blocks[1].prompt_cache_breakpoint and blocks[1].prompt_cache_breakpoint.mode, 'explicit', 'cache point')
+  H.eq(blocks[2].text, 'file', 'rest')
+  H.eq(blocks[2].prompt_cache_breakpoint, nil, 'no cache point on the rest')
+  H.eq(m[1].content, 'sys', 'system turn unchanged')
+  H.eq(extra.prompt_cache_options and extra.prompt_cache_options.mode, 'explicit', 'explicit-only caching')
+  H.eq(extra.prompt_cache_key, 'k1', 'key')
+  H.eq(built[2].content, 'SHAREDfile', 'input not modified')
+end)
+
+H.check("cache = 'auto' uses OpenAI's cache points only for api.openai.com", function()
+  local m = llm.prepare({ url = 'https://api.openai.com', cache = 'auto' }, built, 'SHARED', 'k1')
+  H.eq(type(m[2].content), 'table', 'openai')
+  local m2, extra = llm.prepare({ url = 'http://127.0.0.1:8080', cache = 'auto' }, built, 'SHARED', 'k1')
+  H.eq(m2[2].content, 'SHAREDfile', 'local server: plain text')
+  H.eq(extra.prompt_cache_options, nil, 'local server: no options')
+  H.eq(extra.prompt_cache_key, 'k1', 'key still sent')
+end)
+
+H.check('cache = false and prompt_cache_key = false send plain messages and no extra fields', function()
+  local m, extra = llm.prepare({ url = 'https://api.openai.com', cache = false, prompt_cache_key = false }, built, 'SHARED', 'k1')
+  H.eq(m[2].content, 'SHAREDfile', 'plain')
+  H.eq(next(extra), nil, 'no extra fields')
+end)
+
 H.check('the token counts the server reports are passed on', function()
   local got = run(cfg(mock.start 'A.'))
   H.eq(got.usage and got.usage.prompt_tokens, 120, 'prompt tokens')
   H.eq(got.usage and got.usage.completion_tokens, 30, 'completion tokens')
   H.eq(got.usage and got.usage.cached_tokens, 64, 'cached prompt tokens')
+  H.eq(got.usage and got.usage.cache_write_tokens, 900, 'tokens written to the cache')
 end)
 
 H.check("llama-server's timings, when present, are passed on with the token counts", function()

@@ -128,7 +128,10 @@ function Core:pump()
   while self.active < self.opts.max_concurrent and #self.queue > 0 do
     local job = table.remove(self.queue, 1)
     self.active = self.active + 1
-    local messages = prompt.build { root = job.root, relpath = job.rel, text = job.text, background = self.opts.background }
+    -- Files of one repo share the start of their prompt (background, README, file list), which
+    -- the provider can serve from its cache.
+    local built, shared = prompt.build { root = job.root, relpath = job.rel, text = job.text, background = self.opts.background }
+    local messages, extra = llm.prepare(self.opts.llm, built, shared, store.root_key(job.root))
     llm.request(self.opts.llm, messages, function(err, summary)
       self.active = self.active - 1
       self.pending[job.path] = nil
@@ -142,7 +145,7 @@ function Core:pump()
         self:render(job.path, 'summary', summary)
       end
       self:pump()
-    end)
+    end, extra)
   end
 end
 

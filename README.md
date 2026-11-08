@@ -15,7 +15,7 @@ Summaries are written in ASD-STE100 Simplified Technical English (short sentence
 each, common words), with a blank line between items, so they can be read in a few seconds.
 
 A summary that already exists appears immediately. A file without one gets one once you have
-stayed on it for a second; with the default model, the summary arrives about 1.4 s later.
+stayed on it for a second; with the default model, the summary arrives about 1.3 s later.
 Summaries are cached outside the repo and marked as outdated when the file changes.
 
 **Status:** early. Works with Telescope's file and grep pickers and any OpenAI-compatible chat
@@ -110,6 +110,10 @@ require('synopsis').setup {
     api_key_env = 'OPENAI_API_KEY',
     params = { reasoning_effort = 'none' }, -- added to the request body as given
     timeout_ms = 30000,
+    -- Reuse of the prompt start that a repo's files share (README, file list): 'auto' marks it
+    -- for OpenAI's cache when url is api.openai.com; 'openai' always; false never.
+    cache = 'auto',
+    prompt_cache_key = true, -- send a hash of the repo root as the cache key
   },
   background = '~/.config/butwhy/background.md',
   consent = 'ask',        -- or 'always': send without asking
@@ -155,10 +159,11 @@ Binary files, files over `max_bytes` and files matching `exclude` are never sent
 why.
 
 I measured cost and speed with GPT-6 Luna on 30 files from two small Neovim plugins and a
-Neovim config (2026-11-06). A summary used a median of 2,900 tokens in and 61 out, which is $0.0003 at $0.10 /
-$0.50 per million tokens. The largest file, about 1,000 lines, cost $0.0013. At the median,
-previewing every file of a 1,000-file repo would cost about $0.30. The model replied in a median
-of 1.4 s (range 1.1–2.3 s) after the one-second pause. `eval/` holds the scripts, so you can
+Neovim config (2026-11-08). The README and file list, which every file of a repo shares, are
+read from OpenAI's cache after the repo's first file. A summary then cost a median of $0.00014
+(at $0.10 / $0.50 per million tokens in / out), about a third of the cost without the cache.
+At the median, previewing every file of a 1,000-file repo would cost about $0.14. The model
+replied in a median of 1.3 s after the one-second pause. `eval/` holds the scripts, so you can
 repeat the measurement on your own files.
 
 Summaries are stored as one JSON file per summarized file under Neovim's cache directory

@@ -5,7 +5,7 @@
 --   SYNOPSIS_OUT=out.jsonl nvim --headless -u NONE -c 'luafile eval/collect.lua' root:relpath ...
 local here = vim.fs.dirname(vim.fs.dirname(vim.fs.normalize(vim.fn.fnamemodify(debug.getinfo(1, 'S').source:sub(2), ':p'))))
 vim.opt.rtp:prepend(here)
-local prompt, llm = require 'synopsis.prompt', require 'synopsis.llm'
+local prompt, llm, store = require 'synopsis.prompt', require 'synopsis.llm', require 'synopsis.store'
 local cfg = vim.deepcopy(require('synopsis').config)
 -- A local server instead of the default model: SYNOPSIS_URL and SYNOPSIS_MODEL, no API key.
 if vim.env.SYNOPSIS_URL then
@@ -24,9 +24,12 @@ for _, arg in ipairs(args) do
   local root, rel = arg:match '^(/[^:]+):(.+)$'
   if root then
     local text = table.concat(vim.fn.readfile(root .. '/' .. rel), '\n')
-    local messages = prompt.build { root = root, relpath = rel, text = text, background = background }
+    local messages, shared = prompt.build { root = root, relpath = rel, text = text, background = background }
     local t0, got = vim.uv.hrtime(), nil
-    llm.request(cfg.llm, messages, function(err, summary, usage) got = { err = err, summary = summary, usage = usage } end)
+    -- The same cache fields the plugin sends; SYNOPSIS_NO_CACHE=1 sends none.
+    local llm_cfg = vim.env.SYNOPSIS_NO_CACHE and vim.tbl_extend('force', cfg.llm, { cache = false, prompt_cache_key = false }) or cfg.llm
+    local sent, extra = llm.prepare(llm_cfg, messages, shared, store.root_key(root))
+    llm.request(cfg.llm, sent, function(err, summary, usage) got = { err = err, summary = summary, usage = usage } end, extra)
     vim.wait(cfg.llm.timeout_ms + 5000, function() return got ~= nil end, 10)
     got = got or { err = 'no reply in time' }
     out:write(vim.json.encode {

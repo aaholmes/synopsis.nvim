@@ -13,6 +13,11 @@ local defaults = {
     api_key_env = 'OPENAI_API_KEY',
     params = { reasoning_effort = 'none' },
     timeout_ms = 30000,
+    -- Let the provider reuse the start of the prompt that a repo's files share (README, file
+    -- list). 'auto': OpenAI's cache points when url is api.openai.com; 'openai': always; false:
+    -- never. prompt_cache_key sends a hash of the repo root; false if your server rejects it.
+    cache = 'auto',
+    prompt_cache_key = true,
   },
   -- Reader background, so summaries are pitched at your level. Shared with butwhy.
   background = '~/.config/butwhy/background.md',

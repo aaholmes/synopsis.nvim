@@ -5,6 +5,10 @@ local M = {}
 
 local function short_hash(s) return vim.fn.sha256(s):sub(1, 16) end
 
+---A short hash of the repo root: names its cache folder, and is sent as the cache key, so the
+---path itself is never sent.
+function M.root_key(root) return short_hash(root) end
+
 ---Where the entry for `relpath` inside the repo at `root` is kept.
 function M.entry_path(root, relpath)
   return string.format('%s/synopsis/%s/%s.json', vim.fn.stdpath 'cache', short_hash(root), short_hash(relpath))

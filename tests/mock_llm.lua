@@ -45,7 +45,7 @@ function M.start(replies, opts)
         if type(reply) == 'table' then return respond(client, reply.status, reply.body) end
         respond(client, 200, vim.json.encode {
           id = 'mock', choices = { { index = 0, message = { role = 'assistant', content = reply } } },
-          usage = { prompt_tokens = 120, completion_tokens = 30, prompt_tokens_details = { cached_tokens = 64 } },
+          usage = { prompt_tokens = 120, completion_tokens = 30, prompt_tokens_details = { cached_tokens = 64, cache_write_tokens = 900 } },
           timings = opts.timings,
         })
       end
