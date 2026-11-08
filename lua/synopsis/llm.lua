@@ -30,8 +30,8 @@ function M.prepare(cfg, messages, shared, key)
 end
 
 ---Send `messages` using `cfg` ({ url, chat_path?, model, api_key_env, params?, timeout_ms? })
----and call `callback(err, text, usage)` on the main loop with the reply text or an error
----message. usage is { prompt_tokens, completion_tokens, cached_tokens, cache_write_tokens } when the server reports it.
+---and call `callback(err, text, usage, message)` on the main loop with the reply text or an error
+---message. message is the whole assistant message; when it holds tool_calls, text may be ''. usage is { prompt_tokens, completion_tokens, cached_tokens, cache_write_tokens } when the server reports it.
 ---`extra` holds more body fields for this request only.
 function M.request(cfg, messages, callback, extra)
   local done = vim.schedule_wrap(callback)
@@ -70,9 +70,12 @@ function M.request(cfg, messages, callback, extra)
       local msg = ok and type(json) == 'table' and type(json.error) == 'table' and json.error.message or vim.trim(text or '')
       return done(string.format('HTTP %s: %s', tostring(status), msg))
     end
-    local content = ok and type(json) == 'table' and json.choices and json.choices[1] and json.choices[1].message
-      and json.choices[1].message.content
-    if type(content) ~= 'string' then return done('unexpected reply: ' .. (text or ''):sub(1, 200)) end
+    local message = ok and type(json) == 'table' and json.choices and json.choices[1] and json.choices[1].message
+    local content = type(message) == 'table' and message.content
+    if type(content) ~= 'string' then
+      if type(message) == 'table' and type(message.tool_calls) == 'table' then content = '' end
+      if type(content) ~= 'string' then return done('unexpected reply: ' .. (text or ''):sub(1, 200)) end
+    end
     local u = type(json.usage) == 'table' and json.usage or nil
     local usage = u and {
       prompt_tokens = u.prompt_tokens,
@@ -82,7 +85,7 @@ function M.request(cfg, messages, callback, extra)
       -- llama-server's own report: tokens reused from its cache (cache_n), read (prompt_n), times.
       timings = type(json.timings) == 'table' and json.timings or nil,
     }
-    done(nil, vim.trim(content), usage)
+    done(nil, vim.trim(content), usage, message)
   end)
 end
 

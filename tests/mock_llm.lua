@@ -1,7 +1,8 @@
 -- A fake OpenAI-compatible chat endpoint inside Neovim's event loop, so tests need no network.
 -- start(replies, opts) returns { port, requests, url }. Each POST's decoded JSON body and headers
 -- are appended to `requests` and answered with replies[n] for the nth request (or the last one).
--- A reply is a string (sent as the assistant's message) or { status = 402, body = '...' }.
+-- A reply is a string (sent as the assistant's message), { status = 402, body = '...' }, or
+-- { message = {...} } (sent as the whole assistant message, e.g. with tool_calls).
 -- opts.delay_ms holds every reply back that long, for timeout and concurrency tests;
 -- opts.timings is added to each reply as llama-server's `timings` object.
 local M = {}
@@ -42,9 +43,10 @@ function M.start(replies, opts)
       vim.schedule(function() table.insert(state.requests, { head = head, body = vim.json.decode(body) }) end)
       local function send()
         state.open = state.open - 1
-        if type(reply) == 'table' then return respond(client, reply.status, reply.body) end
+        if type(reply) == 'table' and reply.status then return respond(client, reply.status, reply.body) end
+        local message = type(reply) == 'table' and reply.message or { role = 'assistant', content = reply }
         respond(client, 200, vim.json.encode {
-          id = 'mock', choices = { { index = 0, message = { role = 'assistant', content = reply } } },
+          id = 'mock', choices = { { index = 0, message = message } },
           usage = { prompt_tokens = 120, completion_tokens = 30, prompt_tokens_details = { cached_tokens = 64, cache_write_tokens = 900 } },
           timings = opts.timings,
         })

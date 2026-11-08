@@ -90,6 +90,17 @@ H.check("llama-server's timings, when present, are passed on with the token coun
   H.eq(got.usage.timings.prompt_ms, 812.5, 'prompt_ms')
 end)
 
+H.check('a reply with tool calls and no text passes on the whole message', function()
+  local calls = { { id = 'c1', type = 'function', ['function'] = { name = 'rg', arguments = '{"pattern":"x"}' } } }
+  local server = mock.start { { message = { role = 'assistant', content = vim.NIL, tool_calls = calls } } }
+  local got
+  llm.request(cfg(server), messages, function(err, text, usage, message) got = { err = err, text = text, message = message } end)
+  vim.wait(6000, function() return got ~= nil end, 10)
+  H.eq(got.err, nil, 'error')
+  H.eq(got.text, '', 'text')
+  H.eq(got.message.tool_calls[1]['function'].name, 'rg', 'tool call')
+end)
+
 H.check('an HTTP error becomes a readable error with the status and message', function()
   local server = mock.start { { status = 402, body = '{"error":{"message":"insufficient quota"}}' } }
   local got = run(cfg(server))

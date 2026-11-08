@@ -33,3 +33,37 @@ source files behind it. Predictions in `PLAN.md`; scripts in this folder.
 - The questions were written by agents reading code, with code-level required facts; real users'
   questions may be broader, and broader questions could favour folder synopses.
 - One prompt for folder synopses was tried; another might do better.
+
+# Second test: synopses plus tools that read the code (2026-11-08)
+
+Same 80 questions, 3 samples each, GPT-6 Luna with reasoning off, graded the same way. The files
+arm is the first test's. Share of required facts found, 95% bootstrap over questions:
+
+| Arm | All (80) | Small repos (30) | Large repos (50) | Answers with a false claim |
+|---|---|---|---|---|
+| files: synopses alone | 0.36 [0.31, 0.41] | 0.32 | 0.39 | 30% |
+| tools: + rg, read, outline | 0.79 [0.74, 0.83] | 0.87 | 0.74 | 16% |
+| lsp: + definition, references | 0.77 [0.72, 0.82] | 0.89 | 0.70 | 16% |
+
+- tools-files: +0.43 [+0.37, +0.48]; false-claim rate -0.13 [-0.21, -0.06].
+- By kind, tools-files: where +0.46 (0.46 to 0.92), how +0.48 (0.23 to 0.71), structure +0.26
+  (0.43 to 0.69).
+- lsp-tools: -0.02 [-0.05, +0.01]. The model called the language server in 1 of 240 answers, so
+  this compares two runs of nearly the same arm. On large repos it is -0.04 [-0.08, -0.00]: an
+  interval that only just excludes 0, from noise alone, among six groups.
+- Tool use (tools arm): median 7 calls per answer (read 1,482, rg 458, outline 47 in all). Median
+  $0.0025 and 7.9 s per answer; $1.14 for 240 answers.
+- Three random grades checked by hand: all correct.
+
+Predictions: tools-files +0.25 (wrong: +0.43, above the interval); "how" to ~0.55 (wrong: 0.71);
+false claims to ~15% (right: 16%); lsp-tools about 0 (right, but because the model did not use the
+language server); ~5 calls, ~10 s, ~$0.003 per answer (7 calls, 7.9 s, $0.0025).
+
+What this means: synopses alone are not enough to answer questions about code, but with three
+plain tools the model finds about 80% of the required facts, for a quarter of a cent per answer.
+Offering language-server lookups changed nothing, because the model preferred rg and read.
+
+What this cannot tell us:
+- Whether the synopses help when the model can read code: there is no tools-only arm.
+- Whether the language server would help if the model were made to use it, or on questions
+  about names that rg cannot tell apart (e.g. many functions called `run`).

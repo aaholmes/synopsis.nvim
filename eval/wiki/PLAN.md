@@ -56,3 +56,35 @@ Written 2026-11-08, before any synopsis, folder synopsis or answer was generated
 - risq (352 files: 53 Rust; most of the rest is rustdoc's generated HTML and JS in docs/), 10
   questions, written the same way. Large group: 5 repos, 50 questions; total 80.
 - Prediction: B-A about +0.08, as for the other large repos.
+
+# Second test: synopses plus tools that read the code (written before any tools answer)
+
+## Arms (same 80 questions, 3 samples each, Luna with reasoning off, at most 150 words)
+- files: the file synopses alone (the answers and grades from the first test).
+- tools: the file synopses, plus `rg` (text search), `read` (lines of a file) and `outline`
+  (a file's functions and classes with line numbers, from Tree-sitter).
+- lsp: as tools, plus `definition` and `references` from the language server (lua-language-server,
+  pyright, rust-analyzer).
+
+Both tools arms: up to 10 rounds of tool calls, then the model must answer without tools; tool
+output is capped (50 matches, 200 lines). The system prompt differs from the files arm only in
+saying the model can read the code. The synopsis repo's tools read a snapshot at a4e3b6e, the
+commit before these questions and their answers were added to it.
+
+## Measured
+As in the first test, graded the same way, plus paired differences tools-files and lsp-tools
+(95% bootstrap over questions), tool calls per answer, cost and time per answer.
+
+## Predictions
+- tools-files: +0.25 (0.36 to about 0.60). Largest gain on "how" questions (0.23 to ~0.55),
+  because the missing details (which function, in what order) are in the code the model can
+  now read. False-claim rate falls from ~30% to ~15%.
+- lsp-tools: +0.02, with an interval that includes 0. With `rg` available, the model will rarely
+  call the language server, and a search for a name finds its definition and uses in most of
+  these repos.
+- About 5 tool calls per answer; about 10 s and $0.003 per answer.
+
+## What this cannot tell us
+- Whether the synopses help once the model can read code: there is no tools-only arm.
+- The grader sees the gold files' source, and the tools arms may quote it; a grader that rewards
+  quoted code over correct paraphrase would favour the tools arms.
