@@ -1,5 +1,6 @@
--- synopsis: a short LLM-written summary of each file, shown in a pane above Telescope's results.
--- Use it by giving a picker `layout_strategy = 'synopsis'`.
+-- synopsis: a short LLM-written summary of each file, shown in a pane above Telescope's results,
+-- and :SynopsisAsk, which answers questions about the repo. Use the pane by giving a picker
+-- `layout_strategy = 'synopsis'`.
 local M = {}
 
 local defaults = {
@@ -39,6 +40,15 @@ local defaults = {
   -- answer whether this repo's files may be sent. Ctrl keys rather than Alt keys, because many
   -- macOS terminals send Option as a character, not as Alt.
   keymaps = { scroll_up = '<C-y>', scroll_down = '<C-e>', allow = '<C-a>', deny = '<C-o>' },
+  -- :SynopsisAsk. The model gets a map of the repo's files (leading comments and definition
+  -- names, built without a model) and tools to search and read the code, for up to max_rounds
+  -- turns of tool calls. Files past max_map_chars are listed by path only. Keys in the answer
+  -- window; false for none.
+  ask = {
+    max_rounds = 10,
+    max_map_chars = 150000,
+    keymaps = { close = { 'q', '<Esc>' }, open = '<CR>', locations = 'gl', follow_up = 'a' },
+  },
 }
 
 M.config = vim.deepcopy(defaults)
@@ -60,6 +70,15 @@ function M.setup(opts)
     require('synopsis.consent').set(repo(), 'deny')
     vim.notify('synopsis: synopses are off for ' .. repo())
   end, { desc = "Never send this buffer's repo for synopses" })
+
+  vim.api.nvim_create_user_command('SynopsisAsk', function(o)
+    local root = vim.fs.normalize(vim.fn.resolve(repo()))
+    local function go(q)
+      if q and vim.trim(q) ~= '' then require('synopsis.answer').ask { root = root, question = vim.trim(q), config = M.config } end
+    end
+    if o.args ~= '' then return go(o.args) end
+    vim.ui.input({ prompt = 'Ask about ' .. vim.fs.basename(root) .. ': ' }, go)
+  end, { nargs = '*', desc = "Answer a question about this buffer's repo" })
 
   vim.api.nvim_create_user_command('SynopsisClear', function()
     local store = require 'synopsis.store'

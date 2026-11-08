@@ -101,6 +101,21 @@ H.check('a reply with tool calls and no text passes on the whole message', funct
   H.eq(got.message.tool_calls[1]['function'].name, 'rg', 'tool call')
 end)
 
+H.check('a cancelled request never calls back', function()
+  local server = mock.start('Late.', { delay_ms = 300 })
+  local called = false
+  local handle = llm.request(cfg(server), messages, function() called = true end)
+  vim.wait(100)
+  handle.cancel()
+  vim.wait(800)
+  H.eq(called, false, 'callback')
+end)
+
+H.check('every request returns a handle, even one that fails before sending', function()
+  local handle = llm.request(cfg(nil, { api_key_env = 'SYNOPSIS_NO_SUCH_KEY' }), messages, function() end)
+  H.eq(type(handle.cancel), 'function', 'cancel')
+end)
+
 H.check('an HTTP error becomes a readable error with the status and message', function()
   local server = mock.start { { status = 402, body = '{"error":{"message":"insufficient quota"}}' } }
   local got = run(cfg(server))

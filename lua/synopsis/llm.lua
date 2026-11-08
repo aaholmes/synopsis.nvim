@@ -32,13 +32,25 @@ end
 ---Send `messages` using `cfg` ({ url, chat_path?, model, api_key_env, params?, timeout_ms? })
 ---and call `callback(err, text, usage, message)` on the main loop with the reply text or an error
 ---message. message is the whole assistant message; when it holds tool_calls, text may be ''. usage is { prompt_tokens, completion_tokens, cached_tokens, cache_write_tokens } when the server reports it.
----`extra` holds more body fields for this request only.
+---`extra` holds more body fields for this request only. Returns { cancel = fn }: after
+---cancel(), the request is stopped and callback is never called.
 function M.request(cfg, messages, callback, extra)
-  local done = vim.schedule_wrap(callback)
+  local handle = { cancelled = false }
+  local proc
+  function handle.cancel()
+    handle.cancelled = true
+    if proc then pcall(proc.kill, proc, 15) end
+  end
+  local done = vim.schedule_wrap(function(...)
+    if not handle.cancelled then callback(...) end
+  end)
   local key
   if cfg.api_key_env then
     key = vim.env[cfg.api_key_env]
-    if not key or key == '' then return done(string.format('set $%s to generate synopses', cfg.api_key_env)) end
+    if not key or key == '' then
+      done(string.format('set $%s to generate synopses', cfg.api_key_env))
+      return handle
+    end
   end
 
   local body = vim.tbl_extend('force', cfg.params or {}, extra or {}, { model = cfg.model, messages = messages, stream = false })
@@ -59,7 +71,7 @@ function M.request(cfg, messages, callback, extra)
   }
   local stdin = key and ('Authorization: Bearer ' .. key .. '\n') or '\n'
 
-  vim.system(cmd, { stdin = stdin, text = true }, function(res)
+  proc = vim.system(cmd, { stdin = stdin, text = true }, function(res)
     os.remove(body_file)
     if res.code == 28 then return done(string.format('request timed out after %d ms', timeout_ms)) end
     if res.code ~= 0 then return done('request failed: ' .. vim.trim(res.stderr or ('curl exit ' .. res.code))) end
@@ -87,6 +99,7 @@ function M.request(cfg, messages, callback, extra)
     }
     done(nil, vim.trim(content), usage, message)
   end)
+  return handle
 end
 
 return M
