@@ -99,3 +99,37 @@ less. "How" questions gain nothing from them: once the right file is found, the 
 
 What this cannot tell us: whether a plain file list would do as well as the synopses. The bare
 arm has no list of the repo's files, and no tool that lists them.
+
+# Fourth test: a deterministic file map instead of synopses (2026-11-08)
+
+The map arm replaces each synopsis with the file's leading comment (or docstring) and up to 8
+top-level definitions, read with Tree-sitter (eval/wiki/map.lua); the tools are unchanged. The
+map is 60-90% as long as the synopses. 240 answers, all graded. The bare arm's missing answer and
+grades were filled in first (240/240); its numbers did not change.
+
+| | tools (synopses) | map | bare (no map) | map-tools | map-bare |
+|---|---|---|---|---|---|
+| Required facts, all (80) | 0.79 | 0.78 | 0.73 | -0.01 [-0.04, +0.02] | +0.04 [+0.00, +0.08] |
+| Small repos (30) | 0.87 | 0.85 | 0.82 | -0.02 [-0.07, +0.03] | +0.03 [-0.03, +0.11] |
+| Large repos (50) | 0.74 | 0.73 | 0.68 | -0.01 [-0.05, +0.03] | +0.05 [+0.00, +0.10] |
+| "where" (32) | 0.92 | 0.88 | 0.85 | -0.04 [-0.09, -0.01] | +0.03 [-0.03, +0.09] |
+| "how" (32) | 0.71 | 0.72 | 0.69 | +0.01 [-0.04, +0.06] | +0.03 [-0.02, +0.07] |
+| "structure" (16) | 0.69 | 0.68 | 0.57 | -0.01 [-0.06, +0.06] | +0.11 [-0.01, +0.24] |
+| Answers with a false claim | 16% | 15% | 19% | | |
+| Tool calls per answer (mean) | 8.3 | 8.7 | 11.4 | | |
+| Cost per answer (median) | $0.0025 | $0.0023 | $0.0033 | | |
+| Time per answer (median) | 7.9 s | 7.3 s | 10.3 s | | |
+
+Predictions: map-bare +0.04 (right: +0.04); tools-map +0.02 (right: -0.01 to +0.02 from the
+other side, within the interval); "structure" gains least from the map (wrong: it gains most,
++0.11); ~9.5 calls per answer (8.7); cost close to the tools arm (right, slightly lower).
+
+What this means: for answering questions with code-reading tools, a map built from comments and
+definitions does as well as synopses written by a model, costs nothing to build, and is never
+out of date. The one sign of a gap is on "where" questions (-0.04 [-0.09, -0.01]).
+
+What this cannot tell us:
+- How much of the map's gain comes from the paths alone (no paths-only arm).
+- How a map that mixes synopses and deterministic entries behaves; it should fall between the two.
+- Whether the result holds in repos with few comments: these repos are well commented, and the
+  map's entries depend on that.

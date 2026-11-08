@@ -101,3 +101,16 @@ As in the first test, graded the same way, plus paired differences tools-files a
   round no longer resends the synopses (up to 39,000 tokens on the largest repo).
 - Cannot tell apart: the synopses' content from a plain file list. There is no arm with the
   paths alone, and this arm has no tool that lists files.
+
+# Fourth test: a deterministic file map instead of synopses (written before any answer)
+
+- Arm map: the tools arm's tools and prompt, with each file's synopsis replaced by its leading
+  comment (or docstring) and up to 8 top-level definitions, read with Tree-sitter; files without
+  either show their first non-empty line. Same files, questions and samples; paired with the
+  tools arm (synopses) and the bare arm (no map).
+- Prediction: map-bare +0.04 and tools-map +0.02, both overall: the paths and definitions let the
+  model pick files nearly as well as synopses do, but without the synopses' notes on related files
+  "structure" questions gain least (map-bare ~+0.03 there). Tool calls per answer between the
+  two arms (~9.5). Cost close to the tools arm.
+- Cannot tell apart: the paths from the definitions and comments (no paths-only arm), or how a
+  mix of synopses and map entries behaves.

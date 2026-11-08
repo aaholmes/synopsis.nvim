@@ -4,14 +4,15 @@
 --   tools: rg, read, outline
 --   lsp:   as tools, plus the language server's definition and references
 --   bare:  as tools, without the file synopses
+--   map:   as tools, with map.lua's entries (comments, definitions) in place of the synopses
 -- $WIKI_ROOTS ("repo=dir ...") makes the tools read dir instead of repo, e.g. a snapshot taken
 -- before the questions were added to the repo. Questions: $WIKI_QUESTIONS. Resumes.
 local here = vim.fs.dirname(debug.getinfo(1, 'S').source:sub(2))
 local C = dofile(here .. '/common.lua')
 local A = dofile(here .. '/agent.lua')
 local dir, arm, samples = vim.env.WIKI_DIR, vim.env.WIKI_ARM, tonumber(vim.env.WIKI_SAMPLES or '3')
-local ARMS = { tools = { 'rg', 'read', 'outline' }, bare = { 'rg', 'read', 'outline' }, lsp = { 'rg', 'read', 'outline', 'definition', 'references' } }
-assert(ARMS[arm], 'WIKI_ARM must be tools, lsp or bare')
+local ARMS = { tools = { 'rg', 'read', 'outline' }, bare = { 'rg', 'read', 'outline' }, map = { 'rg', 'read', 'outline' }, lsp = { 'rg', 'read', 'outline', 'definition', 'references' } }
+assert(ARMS[arm], 'WIKI_ARM must be tools, lsp, bare or map')
 local out = vim.env.WIKI_OUT or string.format('%s/answers-%s.jsonl', dir, arm)
 local done = {}
 for _, r in ipairs(C.read_jsonl(out)) do if r.answer then done[r.id .. '#' .. r.sample] = true end end
@@ -31,28 +32,51 @@ local SYSTEM_BARE = [[You answer questions about a code repository. You are give
 question, and tools that search and read the code. Name the files involved, with their paths. If
 the code does not settle a point, say so and mark any inference as a guess. Your final answer: at
 most 150 words.]]
+-- The map arm's prompt: the tools arm's, with the map in place of the summaries.
+local SYSTEM_MAP = [[You answer questions about a code repository. You are given a map of its
+files (each file's leading comment and top-level definitions), plus the question, and tools that
+search and read the code. Use the map to decide where to look, then check the details in the
+code. Name the files involved, with their paths. If the code does not settle a point, say so and
+mark any inference as a guess. Your final answer: at most 150 words.]]
+local SYSTEMS = { tools = SYSTEM, lsp = SYSTEM, bare = SYSTEM_BARE, map = SYSTEM_MAP }
 
 local function one_line(s) return (s or ''):gsub('%s*\n%s*', ' ') end
-local files = {}
+local files, paths = {}, {}
 for _, r in ipairs(C.read_jsonl(dir .. '/synopses.jsonl')) do
   files[r.root] = files[r.root] or {}
+  paths[r.root] = paths[r.root] or {}
+  table.insert(paths[r.root], r.path)
   table.insert(files[r.root], string.format('%s: %s', r.path, r.summary and one_line(r.summary) or '(no synopsis)'))
 end
 -- The same context as ask.lua's files arm.
 local function context(root)
   if arm == 'bare' then return string.format('REPOSITORY: %s\n', vim.fs.basename(root)) end
+  if arm == 'map' then
+    local Map = dofile(here .. '/map.lua')
+    local lines = {}
+    for _, p in ipairs(paths[root]) do table.insert(lines, Map.entry(roots[root] or root, p)) end
+    table.sort(lines)
+    return string.format('REPOSITORY: %s\n\n', vim.fs.basename(root)) .. 'FILE MAP:\n' .. table.concat(lines, '\n') .. '\n'
+  end
   table.sort(files[root])
   return string.format('REPOSITORY: %s\n\n', vim.fs.basename(root)) .. 'FILE SYNOPSES:\n' .. table.concat(files[root], '\n') .. '\n'
 end
 
 local qs = {}
 for path in vim.env.WIKI_QUESTIONS:gmatch '%S+' do vim.list_extend(qs, C.read_jsonl(path)) end
+local contexts = {}
+if vim.env.WIKI_SHOW_CONTEXT then -- print each repo's context size and stop
+  for _, q in ipairs(qs) do contexts[q.repo] = contexts[q.repo] or context(q.repo) end
+  for r, c in pairs(contexts) do io.write(r, ' ', #c, ' chars\n') end
+  vim.cmd 'qa!'
+end
 for _, q in ipairs(qs) do
-  local ctx = context(q.repo)
+  contexts[q.repo] = contexts[q.repo] or context(q.repo)
+  local ctx = contexts[q.repo]
   for s = 1, samples do
     if not done[q.id .. '#' .. s] then
       local t0 = vim.uv.hrtime()
-      local r = A.run { cfg = C.cfg.llm, system = arm == 'bare' and SYSTEM_BARE or SYSTEM, context = ctx, question = q.question, root = roots[q.repo] or q.repo,
+      local r = A.run { cfg = C.cfg.llm, system = SYSTEMS[arm], context = ctx, question = q.question, root = roots[q.repo] or q.repo,
         tools = ARMS[arm], max_rounds = 10, key = C.store.root_key(q.repo .. '#' .. arm) }
       C.append(out, { id = q.id, sample = s, arm = arm, answer = r.answer, error = r.error, rounds = r.rounds, calls = r.calls,
         usage = r.usage, context_chars = #ctx, latency_ms = (vim.uv.hrtime() - t0) / 1e6 })
