@@ -88,3 +88,16 @@ As in the first test, graded the same way, plus paired differences tools-files a
 - Whether the synopses help once the model can read code: there is no tools-only arm.
 - The grader sees the gold files' source, and the tools arms may quote it; a grader that rewards
   quoted code over correct paraphrase would favour the tools arms.
+
+# Third test: tools without synopses (written before any answer)
+
+- Arm bare: the tools arm's tools (rg, read, outline), 10 rounds, same questions and samples,
+  with the file synopses removed. The prompt names the repository only; the system prompt drops
+  the sentence about summaries. Compared with the tools arm, paired over questions.
+- Prediction: bare-tools -0.08 overall, interval excluding 0; about -0.12 on large repos and
+  -0.03 on small ones, because without a map the model must find files by guessing search terms,
+  which is harder among hundreds of files. Largest drop on "where" and "structure" questions.
+- About 3 more tool calls per answer (mostly rg). Cost per answer lower (~$0.0015), since each
+  round no longer resends the synopses (up to 39,000 tokens on the largest repo).
+- Cannot tell apart: the synopses' content from a plain file list. There is no arm with the
+  paths alone, and this arm has no tool that lists files.

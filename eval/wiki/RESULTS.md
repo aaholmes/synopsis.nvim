@@ -67,3 +67,35 @@ What this cannot tell us:
 - Whether the synopses help when the model can read code: there is no tools-only arm.
 - Whether the language server would help if the model were made to use it, or on questions
   about names that rg cannot tell apart (e.g. many functions called `run`).
+
+# Third test: tools without synopses (2026-11-08)
+
+The bare arm has the tools arm's tools but no file synopses; paired with the tools arm over the
+same 80 questions. 239 of 240 answers (one request timed out) and 235 grades (the API account ran
+out of credits during grading); every question has at least one graded sample.
+
+| | tools (synopses + tools) | bare (tools only) | bare-tools |
+|---|---|---|---|
+| Required facts, all (80) | 0.79 | 0.73 | -0.06 [-0.09, -0.02] |
+| Small repos (30) | 0.87 | 0.82 | -0.05 [-0.11, -0.00] |
+| Large repos (50) | 0.74 | 0.68 | -0.06 [-0.11, -0.01] |
+| "where" (32) | 0.92 | 0.85 | -0.07 [-0.12, -0.03] |
+| "how" (32) | 0.71 | 0.70 | -0.01 [-0.05, +0.04] |
+| "structure" (16) | 0.69 | 0.57 | -0.12 [-0.24, +0.00] |
+| Answers with a false claim | 16% | 20% | +0.03 [-0.04, +0.10] |
+| Tool calls per answer (mean) | 8.3 | 11.4 | |
+| rg calls in all | 458 | 1,290 | |
+| Cost per answer (median) | $0.0025 | $0.0034 | |
+| Time per answer (median) | 7.9 s | 10.3 s | |
+
+Predictions: bare-tools -0.08 with an interval excluding 0 (right: -0.06); -0.12 on large repos
+and -0.03 on small ones (wrong: the drop is about the same, -0.06 and -0.05); largest drop on
+"where" and "structure" (right); ~3 more calls per answer (right: +3.1); lower cost (wrong: the
+extra rounds cost more than the synopses they no longer resend).
+
+What this means: the synopses help even when the model can read the code. They raise the share
+of required facts by 0.06, and they make answers cheaper and faster, because the model searches
+less. "How" questions gain nothing from them: once the right file is found, the code answers.
+
+What this cannot tell us: whether a plain file list would do as well as the synopses. The bare
+arm has no list of the repo's files, and no tool that lists them.
