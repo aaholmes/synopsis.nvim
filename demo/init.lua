@@ -1,4 +1,5 @@
--- Minimal Neovim config for recording the README GIF (vhs demo/demo.tape, from the repo root).
+-- Minimal Neovim config for recording the README GIFs (vhs demo/demo.tape and vhs demo/chat.tape,
+-- from the repo root).
 -- Loads this repo, Telescope and a colour scheme, nothing personal. Summaries go to a fresh cache
 -- each time, so the recording shows one being written.
 local root = vim.fs.dirname(vim.fs.dirname(vim.fs.normalize(vim.fn.fnamemodify(debug.getinfo(1, 'S').source:sub(2), ':p'))))
@@ -20,5 +21,7 @@ require('telescope').setup {
   defaults = { dynamic_preview_title = true, layout_strategy = 'synopsis', layout_config = { width = 0.98, height = 0.96, preview_width = 0.55 } },
 }
 -- consent = 'always': the demo repo is public, so the recording skips the question about sending it.
-require('synopsis').setup { background = root .. '/demo/background.md', consent = 'always' }
+-- side_min_columns: the chat recording is about 155 columns wide, narrower than the default 180, and
+-- the chat should open beside the picker.
+require('synopsis').setup { background = root .. '/demo/background.md', consent = 'always', ask = { side_min_columns = 150 } }
 vim.keymap.set('n', '<leader>sf', require('telescope.builtin').find_files)
