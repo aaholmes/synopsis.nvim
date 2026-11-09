@@ -137,7 +137,7 @@ paired over the same files or questions. Details are in `eval/*/RESULTS.md`.
 
 Early. Both features work with Telescope's file and grep pickers and any OpenAI-compatible chat
 endpoint. Tested on macOS with Neovim 0.12.4 and Telescope commit `9377230`. GitHub Actions runs
-the 210 automated tests on Linux. The tests call the chat's mouse handler directly, since
+the 213 automated tests on Linux. The tests call the chat's mouse handler directly, since
 headless Neovim receives no real clicks.
 
 Known limitations:

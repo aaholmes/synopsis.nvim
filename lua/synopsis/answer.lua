@@ -252,6 +252,15 @@ local function preview_win(s)
   return w and vim.api.nvim_win_is_valid(w) and w or nil
 end
 
+---Scroll the preview half a window down (dir 1) or up (-1) as Telescope's <C-d> and <C-u> do:
+---with <C-e> and <C-y>, which also scroll a file shorter than the window, unlike Vim's <C-d>.
+local function scroll_preview(s, dir)
+  local w = preview_win(s)
+  if not w then return end
+  local count = math.max(1, math.floor(vim.api.nvim_win_get_height(w) / 2))
+  vim.api.nvim_win_call(w, function() vim.cmd('normal! ' .. count .. vim.keycode(dir > 0 and '<C-e>' or '<C-y>')) end)
+end
+
 local PREVIEW_OPTS = { 'wrap', 'linebreak', 'number', 'conceallevel', 'concealcursor', 'scrolloff' }
 
 local function set_preview_title(s, win, title)
@@ -812,6 +821,8 @@ local function open_windows(s)
     map_keys(s.input_buf, { 'i', 'n' }, km.open_tab, function() M.open_link 'tabedit' end, 'open the selected link in a tab')
     map_keys(s.input_buf, { 'i', 'n' }, km.new_chat, M.new_chat, 'start a new chat')
     map_keys(s.input_buf, { 'i', 'n' }, '<C-c>', M.close, 'close the chat')
+    map_keys(s.input_buf, { 'i', 'n' }, km.scroll_preview_down, function() scroll_preview(s, 1) end, 'scroll the preview down')
+    map_keys(s.input_buf, { 'i', 'n' }, km.scroll_preview_up, function() scroll_preview(s, -1) end, 'scroll the preview up')
     if s.dock then map_keys(s.input_buf, { 'i', 'n' }, km.picker, function() to_prompt(s) end, 'go to the picker') end
   end
   input_keys()

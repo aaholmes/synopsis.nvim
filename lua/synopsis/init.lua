@@ -65,6 +65,7 @@ local defaults = {
       close = { 'q', '<Esc>' }, open = '<CR>', locations = 'gl', new_chat = '<C-n>',
       next_citation = '<Tab>', prev_citation = '<S-Tab>', picker = '<C-Space>',
       open_split = '<C-x>', open_vsplit = '<C-v>', open_tab = '<C-t>', -- as in Telescope
+      scroll_preview_down = '<C-d>', scroll_preview_up = '<C-u>', -- as in Telescope
     },
   },
 }

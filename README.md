@@ -24,11 +24,12 @@ moves through the citations, and the preview, the selected result and the summar
 
 - Summaries you can read in a few seconds, pitched at your background if you describe it.
 - Answers that cite `path:line`, with the cited code block highlighted in the preview.
-- Telescope stays open beside the chat: Ctrl-Space switches between them.
+- Telescope stays open beside the chat: Ctrl-Space switches between them, and the preview,
+  the selected result and the summary follow the citation you pick.
 - One conversation per repo for the whole Neovim session.
 - Any OpenAI-compatible endpoint, including a local llama.cpp or Ollama server.
 - Nothing is sent until you allow the repo, and secret-looking files are never sent.
-- Cheap: about $0.00014 per summary and $0.003 per answer with the default model.
+- About $0.00014 per summary and $0.003 per answer with the default model.
 
 ## Requirements
 
@@ -105,11 +106,11 @@ Press Ctrl-Space on a file in the picker. On a screen at least 180 columns wide,
 in a column on the right and the picker stays open; on narrower screens it opens on its own and
 the picker comes back when you close it.
 
-- Type in the input panel and press Enter. While the model works, its searches and reads appear
-  as muted lines.
+- Type a question and press Enter. While the model works, its searches and reads appear as
+  muted lines.
 - Each answer selects its first citation. Tab and Shift-Tab move through the citations; the
   preview highlights the cited lines, or the function, loop or statement that starts on a cited
-  line.
+  line, and Ctrl-d and Ctrl-u scroll it. The cursor stays in the input throughout.
 - The picker follows the citation: its file is selected in the results, clearing the prompt if
   it is not listed, and the summary pane shows it.
 - Ctrl-Space goes back to the picker with the same file previewed, and back again to the chat.
@@ -127,6 +128,7 @@ In the picker's prompt (Insert and Normal mode):
 |---|---|
 | `<C-Space>` | Open the chat about the selected file, or go back to it |
 | `<C-e>` / `<C-y>` | Scroll the summary down / up |
+| `<C-d>` / `<C-u>` | Scroll the preview down / up (Telescope's own keys) |
 | `<C-a>` / `<C-o>` | Allow the repo to be sent / turn summaries off for it |
 
 In the chat's input panel:
@@ -136,6 +138,7 @@ In the chat's input panel:
 | `<CR>` | Send the question; with nothing typed, open the selected citation |
 | `<Tab>` / `<S-Tab>` | Select the next / previous citation |
 | `<C-x>` / `<C-v>` / `<C-t>` | Open the selected citation in a split / vertical split / tab |
+| `<C-d>` / `<C-u>` | Scroll the preview down / up, as in the picker |
 | `<M-Left>` / `<M-Right>` | Move back / forward a word (Option-arrows on a Mac) |
 | `<C-Space>` | Back to the picker |
 | `<C-n>` | Start a new conversation |
@@ -181,6 +184,7 @@ require('synopsis').setup {
       close = { 'q', '<Esc>' }, open = '<CR>', locations = 'gl', new_chat = '<C-n>',
       next_citation = '<Tab>', prev_citation = '<S-Tab>', picker = '<C-Space>',
       open_split = '<C-x>', open_vsplit = '<C-v>', open_tab = '<C-t>',
+      scroll_preview_down = '<C-d>', scroll_preview_up = '<C-u>',
     },
   },
 }
@@ -243,6 +247,12 @@ and the names it defines, plus tools to search (ripgrep) and read the code. On 8
 about 8 repos, its answers contained 0.74 [95% CI 0.69, 0.79] of the facts a correct answer
 needs, compared with 0.36 for answers from file summaries alone. The architecture, the design
 choices and the evaluations behind them are in [docs/design.md](docs/design.md).
+
+## Status
+
+Early. Tested on macOS with Neovim 0.12 and kitty; the tests also run on Linux
+in GitHub Actions. Known limitations and planned work, such as questions about a highlighted
+passage and chats saved across sessions, are in [docs/design.md](docs/design.md#state).
 
 ## Tests
 

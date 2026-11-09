@@ -21,7 +21,7 @@ local function config(server, over)
     consent = 'always', exclude = { '.env' }, max_bytes = 100 * 1024,
     ask = { max_rounds = 4, max_map_chars = 150000, retry_ms = 10, render = true, preview = true, preview_min_columns = 120,
       keymaps = { close = { 'q', '<Esc>' }, open = '<CR>', locations = 'gl', new_chat = '<C-n>', next_citation = '<Tab>',
-        prev_citation = '<S-Tab>', picker = '<C-Space>' } },
+        prev_citation = '<S-Tab>', picker = '<C-Space>', scroll_preview_down = '<C-d>', scroll_preview_up = '<C-u>' } },
   }, over or {})
 end
 local function cur() return answer.current end
@@ -493,6 +493,24 @@ H.check('a citation is shown near the top of the preview, with three lines above
   answer.preview('long.txt', 2)
   top = vim.api.nvim_win_call(cur().preview_win, function() return vim.fn.line 'w0' end)
   H.eq(top, 1, 'near the start, from the first line')
+  -- Ctrl-D and Ctrl-U in the input scroll the preview half a window, as they do in Telescope.
+  local function top_line() return vim.api.nvim_win_call(cur().preview_win, function() return vim.fn.line 'w0' end) end
+  local half = math.floor(vim.api.nvim_win_get_height(cur().preview_win) / 2)
+  for _, mode in ipairs { 'i', 'n' } do
+    press(cur().input_buf, mode, '<C-d>')
+    H.eq(top_line(), 1 + half, mode .. ': <C-d> scrolls the preview down')
+    press(cur().input_buf, mode, '<C-u>')
+    H.eq(top_line(), 1, mode .. ': <C-u> scrolls it back up')
+  end
+  H.eq(vim.api.nvim_get_current_win(), cur().input_win, 'the focus stays in the input')
+  -- A file that fits in the window scrolls too, as in Telescope.
+  vim.fn.writefile({ 'one', 'two', 'three' }, repo .. '/short.txt')
+  answer.preview('short.txt', 1)
+  press(cur().input_buf, 'i', '<C-d>')
+  H.eq(top_line() > 1, true, '<C-d> scrolls a short file')
+  press(cur().input_buf, 'i', '<C-u>')
+  H.eq(top_line(), 1, '<C-u> scrolls it back')
+  vim.fn.delete(repo .. '/short.txt')
   reset()
   vim.o.scrolloff = so
   vim.fn.delete(repo .. '/long.txt')
