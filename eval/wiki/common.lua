@@ -20,7 +20,14 @@ end
 function M.read_jsonl(path)
   local out = {}
   if vim.uv.fs_stat(path) then
-    for _, l in ipairs(vim.fn.readfile(path)) do if l ~= '' then table.insert(out, vim.json.decode(l)) end end
+    for _, l in ipairs(vim.fn.readfile(path)) do
+      if l ~= '' then
+        local o = vim.json.decode(l)
+        -- Question files give repos as ~/...; expand to the absolute path every script keys on.
+        if type(o.repo) == 'string' then o.repo = vim.fs.normalize(o.repo) end
+        table.insert(out, o)
+      end
+    end
   end
   return out
 end

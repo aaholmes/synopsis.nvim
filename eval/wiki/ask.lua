@@ -39,7 +39,8 @@ local function folder_block(root)
   table.sort(lines)
   return 'REPO OVERVIEW:\n' .. (f['.'] or '') .. '\n\nFOLDER SYNOPSES:\n' .. table.concat(lines, '\n') .. '\n\n'
 end
-local small = { ['/Users/adam/synopsis'] = 1, ['/Users/adam/butwhy'] = 1, ['/Users/adam/.config/nvim'] = 1 }
+local small = {}
+for _, r in ipairs { '~/synopsis', '~/butwhy', '~/.config/nvim' } do small[vim.fs.normalize(r)] = 1 end
 -- Padding comes from another repo of the same size group, so its kind of text matches.
 local function padding(root, n)
   local others = {}

@@ -13,8 +13,9 @@ for p in sys.argv[2:]:
     for l in open(p):
         if l.strip():
             q = json.loads(l)
+            q['repo'] = os.path.expanduser(q['repo'])
             qs[q['id']] = q
-SMALL = {'/Users/adam/synopsis', '/Users/adam/butwhy', '/Users/adam/.config/nvim'}
+SMALL = {os.path.expanduser(r) for r in ('~/synopsis', '~/butwhy', '~/.config/nvim')}
 grades = [json.loads(l) for p in sorted(d.glob('grades*.jsonl')) for l in open(p) if l.strip()]
 fact = defaultdict(list)   # (arm, id) -> per-sample share of required facts
 wrong = defaultdict(list)  # (arm, id) -> per-sample: any false claim
