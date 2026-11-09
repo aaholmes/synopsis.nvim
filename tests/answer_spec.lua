@@ -492,6 +492,16 @@ H.check('the selected link stands out: SynopsisLink links to IncSearch by defaul
   H.eq(vim.api.nvim_get_hl(0, { name = 'SynopsisLink' }).link, 'IncSearch', 'default link')
 end)
 
+H.check("the selected link's highlight wins over markview's inline code (priority 4096)", function()
+  reset()
+  local server = mock.start 'See `a.lua:2-3` and b.lua:1.'
+  answer.open { root = repo, question = 'Q?', config = config(server) }
+  vim.wait(3000, idle, 10)
+  local ns = vim.api.nvim_get_namespaces()['synopsis.link']
+  local m = vim.api.nvim_buf_get_extmarks(cur().buf, ns, 0, -1, { details = true })[1]
+  H.eq(m ~= nil and m[4].priority > 4096, true, m and ('priority ' .. m[4].priority) or 'no link mark')
+end)
+
 H.check('<Tab> and <S-Tab> in the input move the selected link, wrapping, and the preview follows', function()
   reset()
   local server = mock.start 'See a.lua:2-3 and b.lua:1.'

@@ -105,9 +105,9 @@ paired over the same files or questions. Details are in `eval/*/RESULTS.md`.
     used them once in 240 answers, preferring `rg` and `read`.
 - **The released code is measured too.** The evaluation runs on the plugin's own modules. As
   `:SynopsisAsk` runs, answers contained 0.74 [0.69, 0.79] of the required facts, and 15% had a
-  false claim. That is 0.03 [0.00, 0.06] below the earlier arm with the same map. A likely cause,
-  not yet tested, is that the path:line citations now count toward the 150-word limit on
-  answers.
+  false claim. That is 0.03 [0.00, 0.06] below the evaluation's own arm with the same map. A
+  likely cause, not yet tested, is that the path:line citations now count toward the 150-word
+  limit on answers.
 
 **Limits of this evidence:**
 - One model wrote the summaries, answered the questions and graded the answers, so any bias it
@@ -127,29 +127,36 @@ paired over the same files or questions. Details are in `eval/*/RESULTS.md`.
 - **One typing cursor, and a separate link cursor.** Every key works in the input panel, so
   typing a question and moving through the answer never compete for the focus. Tab moves a
   highlighted link cursor through the conversation, which jumps to each new answer's first
-  link, and `<CR>` with nothing typed opens it. The conversation itself never keeps the focus;
-  clicking a link selects it. Only one key, Ctrl-Space, switches between the picker and the
-  chat. Other plugins remap keys in every buffer (llama.vim maps and unmaps `<Tab>` as you
-  type; blink.cmp maps `<C-n>`), so synopsis maps its keys in the input again after them.
+  link. `<CR>` with nothing typed opens it, and Telescope's own keys and clicks for opening a
+  file open it too. The conversation itself never keeps the focus; clicking a link selects it.
+  Only one key, Ctrl-Space, switches between the picker and the chat. Other plugins remap keys
+  in every buffer (llama.vim maps and unmaps `<Tab>` as you type; blink.cmp maps `<C-n>`), so
+  synopsis maps its keys in the input again after them.
 - **One preview, owned by the side with the focus.** The chat shows citations in Telescope's
   preview. Which file it shows depends on where the focus is, so moving through the results
   never replaces a citation you are reading.
 - **One conversation per repo, not per file.** Questions asked while browsing usually build on
-  each other, so Ctrl-Space on a second file continues the chat, and the model is told the new file
-  once. A cancelled question is removed from the messages, because the API rejects a
+  each other, so Ctrl-Space on a second file continues the chat, and the model is told the new
+  file once. A cancelled question is removed from the messages, because the API rejects a
   conversation that ends in an unanswered tool call.
 
 ## Current state
 
 Early. Both features work with Telescope's file and grep pickers and any OpenAI-compatible chat
 endpoint. Tested on macOS with Neovim 0.12.4 and Telescope commit `9377230`. GitHub Actions runs
-the 196 automated tests on Linux. The tests call the chat's mouse handler directly, since
+the 200 automated tests on Linux. The tests call the chat's mouse handler directly, since
 headless Neovim receives no real clicks.
+
+A known limitation: an inline equation drawn as an image by snacks can push the text after it
+onto a later row. Neovim decides where to wrap a line using the LaTeX source hidden behind the
+image, so a long equation leaves empty rows after it.
 
 ## Future directions
 
 - Test whether excluding citations from the 150-word limit recovers the 0.03 lost in the
   released code.
+- Break the chat's lines in synopsis itself, counting each equation as the width of its image,
+  so inline maths stays on its line.
 - On screens too narrow for three columns, show the chat in place of the summary and results,
   so the picker can stay open there too. Today the picker closes on such screens.
 - Bring the chat back when Telescope's `resume` reopens a picker.
@@ -240,14 +247,17 @@ In the input panel:
 |---|---|
 | `<CR>` | Send the question (ignored while an answer is still coming); with nothing typed, open the selected link |
 | `<Tab>` / `<S-Tab>` | Select the next / previous link and preview it, wrapping around |
+| `<C-x>` / `<C-v>` / `<C-t>` | Open the selected link in a split / a vertical split / a tab, as in Telescope |
 | `<C-Space>` | Back to the picker's prompt, when the chat is beside one |
 | `<C-n>` | Start a new chat for this repo |
 | `<C-c>`, or `q` / `<Esc>` in Normal mode | Close the chat, and stop the request if one is running |
 | `gl` (Normal mode) | List every cited location in Telescope, previewed |
 
 With the mouse, clicking a link selects it, clicking the chat or the prompt moves the typing
-cursor there, and the wheel scrolls the conversation. In the preview, `<CR>` opens the file at
-the cursor's line.
+cursor there, and the wheel scrolls the conversation. Beside the picker, clicking Telescope's
+preview from the chat opens what it shows, as a click from the prompt does: the selected link,
+or the picker's file when no link is selected. In the chat's own preview pane, `<CR>` opens the
+file at the cursor's line.
 
 ## Tell it who you are
 
@@ -306,6 +316,7 @@ require('synopsis').setup {
     keymaps = {
       close = { 'q', '<Esc>' }, open = '<CR>', locations = 'gl', new_chat = '<C-n>',
       next_citation = '<Tab>', prev_citation = '<S-Tab>', picker = '<C-Space>',
+      open_split = '<C-x>', open_vsplit = '<C-v>', open_tab = '<C-t>',
     },
   },
 }

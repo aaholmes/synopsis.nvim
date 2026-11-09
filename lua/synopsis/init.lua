@@ -51,8 +51,9 @@ local defaults = {
   -- which stays open, and shows cited lines in Telescope's preview.
   -- Keys, all in the input panel, where the typing cursor stays: open (<CR>) sends the question,
   -- or with nothing typed opens the selected link; next_citation / prev_citation move the
-  -- selected link; picker goes back to the picker's prompt, when beside one; close and locations
-  -- in Normal mode; false for none.
+  -- selected link; open_split / open_vsplit / open_tab open it as Telescope does; picker goes
+  -- back to the picker's prompt, when beside one; close and locations in Normal mode; false
+  -- for none.
   ask = {
     max_rounds = 10,
     max_map_chars = 150000,
@@ -63,6 +64,7 @@ local defaults = {
     keymaps = {
       close = { 'q', '<Esc>' }, open = '<CR>', locations = 'gl', new_chat = '<C-n>',
       next_citation = '<Tab>', prev_citation = '<S-Tab>', picker = '<C-Space>',
+      open_split = '<C-x>', open_vsplit = '<C-v>', open_tab = '<C-t>', -- as in Telescope
     },
   },
 }

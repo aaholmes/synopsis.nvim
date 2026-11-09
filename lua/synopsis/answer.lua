@@ -200,7 +200,7 @@ end
 
 -- The preview pane.
 
-local jump -- defined below: close the chat and open a file at a line
+local jump -- defined below: close the chat and open a file at a line, with edit, split, vsplit or tabedit
 
 local function preview_message(s, text)
   local buf = s.preview_msg_buf
@@ -348,7 +348,8 @@ draw_link = function(s)
   vim.api.nvim_buf_clear_namespace(s.buf, ns_link, 0, -1)
   local c = s.link and buffer_citations(s)[s.link]
   if not c then return end
-  vim.api.nvim_buf_set_extmark(s.buf, ns_link, c.row - 1, c.s - 1, { end_col = c.e, hl_group = 'SynopsisLink', priority = 200 })
+  -- Above markview's inline code (priority 4096), which would otherwise colour over it.
+  vim.api.nvim_buf_set_extmark(s.buf, ns_link, c.row - 1, c.s - 1, { end_col = c.e, hl_group = 'SynopsisLink', priority = 10000 })
   return c
 end
 
@@ -525,21 +526,21 @@ function M.close(opts)
   s.jumped = false
 end
 
-jump = function(s, path, line)
+jump = function(s, path, line, cmd)
   s.jumped = true
   M.close { picker = true }
-  vim.cmd.edit(vim.fn.fnameescape(s.root .. '/' .. path))
+  vim.cmd[cmd or 'edit'](vim.fn.fnameescape(s.root .. '/' .. path))
   pcall(vim.api.nvim_win_set_cursor, 0, { line, 0 })
   vim.cmd 'normal! zz'
 end
 
----Open the selected link.
-function M.open_link()
+---Open the selected link, with cmd: edit (the default), split, vsplit or tabedit.
+function M.open_link(cmd)
   local s = M.current
   if not is_open(s) then return end
   local c = s.link and buffer_citations(s)[s.link]
   if not c then return vim.notify('synopsis: no link selected (Tab selects one)', vim.log.levels.INFO) end
-  jump(s, c.path, c.line)
+  jump(s, c.path, c.line, cmd)
 end
 
 ---A Telescope picker of every citation in the conversation.
@@ -700,6 +701,9 @@ local function open_windows(s)
     map_keys(s.input_buf, { 'i', 'n' }, km.open or '<CR>', function() send_input(s) end, 'send the question, or open the selected link')
     map_keys(s.input_buf, { 'i', 'n' }, km.next_citation, function() step_link(s, 1) end, 'select the next link')
     map_keys(s.input_buf, { 'i', 'n' }, km.prev_citation, function() step_link(s, -1) end, 'select the previous link')
+    map_keys(s.input_buf, { 'i', 'n' }, km.open_split, function() M.open_link 'split' end, 'open the selected link in a split')
+    map_keys(s.input_buf, { 'i', 'n' }, km.open_vsplit, function() M.open_link 'vsplit' end, 'open the selected link in a vertical split')
+    map_keys(s.input_buf, { 'i', 'n' }, km.open_tab, function() M.open_link 'tabedit' end, 'open the selected link in a tab')
     map_keys(s.input_buf, { 'i', 'n' }, km.new_chat, M.new_chat, 'start a new chat')
     map_keys(s.input_buf, { 'i', 'n' }, '<C-c>', M.close, 'close the chat')
     if s.dock then map_keys(s.input_buf, { 'i', 'n' }, km.picker, function() to_prompt(s) end, 'go to the picker') end
@@ -745,6 +749,16 @@ local function open_windows(s)
             vim.api.nvim_set_current_win(p.prompt_win)
             p:set_selection(row - 1)
             if vim.api.nvim_get_mode().mode:sub(1, 1) ~= 'i' then vim.cmd 'startinsert!' end
+          elseif w == p.preview_win then
+            -- A click on the preview from the chat opens what it shows, as Telescope does from
+            -- its prompt: the selected link, or else the picker's selected file.
+            local shown = vim.api.nvim_win_get_buf(w)
+            for _, b in pairs(s.preview_bufs or {}) do
+              if b == shown and s.link then return M.open_link() end
+            end
+            local prompt = s.dock.prompt
+            vim.api.nvim_set_current_win(p.prompt_win)
+            require('telescope.actions').select_default(prompt)
           elseif w == p.prompt_win then
             give_back_preview(s)
             if vim.api.nvim_get_mode().mode:sub(1, 1) ~= 'i' then vim.cmd 'startinsert!' end

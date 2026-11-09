@@ -240,6 +240,55 @@ H.check('<CR> in an empty input opens the selected citation, closing both', func
   H.eq(vim.api.nvim_win_get_config(0).relative, '', 'in an ordinary window')
 end)
 
+H.check("clicking Telescope's preview from the chat opens the citation it shows, closing both", function()
+  close_all()
+  open_picker()
+  ctrl_space()
+  ask 'Where?'
+  vim.api.nvim_set_current_win(picker().preview_win) -- where a click on the preview lands
+  vim.wait(500, function() return prompt_buf() == nil end, 10)
+  H.eq(prompt_buf(), nil, 'picker closed')
+  H.eq(cur().closed, true, 'chat closed')
+  H.eq(vim.fs.basename(vim.api.nvim_buf_get_name(0)), 'a.lua', 'cited file opened')
+  H.eq(vim.api.nvim_win_get_cursor(0)[1], 2, 'at the cited line')
+  H.eq(vim.api.nvim_win_get_config(0).relative, '', 'in an ordinary window')
+end)
+
+H.check("with no link selected, clicking the preview from the chat opens the picker's file, as Telescope does", function()
+  close_all()
+  open_picker()
+  local entry = state.get_selected_entry()
+  local name = vim.fs.basename(entry.path or entry.filename or entry.value)
+  ctrl_space()
+  vim.api.nvim_set_current_win(picker().preview_win)
+  vim.wait(500, function() return prompt_buf() == nil end, 10)
+  H.eq(prompt_buf(), nil, 'picker closed')
+  H.eq(cur().closed, true, 'chat closed')
+  H.eq(vim.fs.basename(vim.api.nvim_buf_get_name(0)), name, 'selected file opened')
+end)
+
+H.check("Telescope's <C-x>, <C-v> and <C-t> in the input open the selected link in a split, a vertical split or a tab", function()
+  for _, case in ipairs { { '<C-x>', 'col' }, { '<C-v>', 'row' }, { '<C-t>', 'tab' } } do
+    close_all()
+    vim.cmd 'silent! tabonly'
+    open_picker()
+    ctrl_space()
+    ask 'Where?'
+    press(cur().input_buf, 'i', case[1])
+    vim.wait(500, function() return prompt_buf() == nil end, 10)
+    H.eq(prompt_buf(), nil, case[1] .. ': picker closed')
+    H.eq(cur().closed, true, case[1] .. ': chat closed')
+    H.eq(vim.fs.basename(vim.api.nvim_buf_get_name(0)), 'a.lua', case[1] .. ': file')
+    H.eq(vim.api.nvim_win_get_cursor(0)[1], 2, case[1] .. ': line')
+    if case[2] == 'tab' then
+      H.eq(#vim.api.nvim_list_tabpages(), 2, '<C-t>: a new tab')
+    else
+      H.eq(vim.fn.winlayout()[1], case[2], case[1] .. ': split direction')
+    end
+  end
+  vim.cmd 'silent! tabonly'
+end)
+
 local function wh(win) return vim.wo[win].winhighlight end
 
 H.check("the docked chat's borders use Telescope's highlight groups; a chat on its own does not", function()
