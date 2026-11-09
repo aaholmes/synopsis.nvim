@@ -271,7 +271,6 @@ function M.attach(core, keymaps)
     group = group,
     pattern = 'TelescopePreviewerLoaded',
     callback = function(ev)
-      if ev.data and ev.data.synopsis_citation then return end -- the chat's citations keep the pane on the selected file
       local picker = current_picker()
       if not (picker and picker._synopsis and picker.layout_strategy == 'synopsis') then return end
       open_pane(picker)

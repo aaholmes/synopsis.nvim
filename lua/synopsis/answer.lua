@@ -353,6 +353,70 @@ draw_link = function(s)
   return c
 end
 
+-- Beside a picker, the picker's selection follows the previewed citation, so the results, the
+-- preview and the synopsis pane agree on one file whichever side has the focus.
+
+---The index in picker p's results of the entry for the absolute path file, if listed.
+local function entry_index(p, file)
+  if not p.manager then return end
+  local base = vim.fn.resolve(p.cwd or vim.fn.getcwd())
+  local i = 0
+  for entry in p.manager:iter() do
+    i = i + 1
+    local name = entry.path or entry.filename or (type(entry.value) == 'string' and entry.value) or nil
+    if name then
+      name = name:match '^/' and name or vim.fs.joinpath(base, name)
+      if vim.fs.normalize(vim.fn.resolve(name)) == file then return i end
+    end
+  end
+end
+
+---Select result i in p without Telescope previewing it, which would replace the citation.
+local function select_quietly(p, i)
+  local own = rawget(p, 'refresh_previewer')
+  p.refresh_previewer = function() end
+  pcall(p.set_selection, p, p:get_row(i))
+  p.refresh_previewer = own
+end
+
+---Select the citation's file in the picker. If it is not among the results, clear the prompt
+---and select it when the results come back. The picker's selection is then the chat's doing,
+---so it is not noted as a file the user moved to.
+local function follow_in_picker(s, path)
+  local p = s.dock.picker
+  local file = vim.fs.normalize(s.root .. '/' .. path)
+  local function select(i)
+    select_quietly(p, i)
+    s.about = { path = path }
+  end
+  local i = entry_index(p, file)
+  if i then return select(i) end
+  if p:_get_prompt() == '' then return end
+  -- Telescope previews its first result when the new results come back, which would replace
+  -- the citation; it previews nothing until then (or for at most 3 s).
+  local own = rawget(p, 'refresh_previewer')
+  p.refresh_previewer = function() end
+  local restored = false
+  local function restore()
+    if restored then return end
+    restored = true
+    p.refresh_previewer = own
+  end
+  vim.defer_fn(restore, 3000)
+  local function done()
+    for k, f in ipairs(p._completion_callbacks) do
+      if f == done then table.remove(p._completion_callbacks, k) break end
+    end
+    restore()
+    local c = s.link and buffer_citations(s)[s.link]
+    if s.closed or M.current ~= s or not s.dock or not c or c.path ~= path then return end
+    local j = entry_index(p, file)
+    if j then select(j) end
+  end
+  p:register_completion_callback(done)
+  p:reset_prompt ''
+end
+
 ---Select citation i (wrapping around), keep it in view, and preview it.
 local function select_link(s, i)
   local cites = buffer_citations(s)
@@ -361,6 +425,7 @@ local function select_link(s, i)
   local c = draw_link(s)
   pcall(vim.api.nvim_win_set_cursor, s.win, { c.row, c.s - 1 })
   M.preview(c.path, c.line, c.last)
+  if s.dock then follow_in_picker(s, c.path) end
 end
 
 local function step_link(s, dir)
@@ -630,7 +695,6 @@ end
 
 local function to_prompt(s)
   if not (s.dock and s.dock.picker.prompt_win and vim.api.nvim_win_is_valid(s.dock.picker.prompt_win)) then return end
-  give_back_preview(s)
   local insert = vim.api.nvim_get_mode().mode:sub(1, 1) == 'i'
   vim.api.nvim_set_current_win(s.dock.picker.prompt_win)
   if not insert then vim.cmd 'startinsert!' end
@@ -735,8 +799,25 @@ local function open_windows(s)
   if s.dock then
     -- The picker no longer closes itself when its prompt loses the focus; moving to an ordinary
     -- window closes both.
+    local group = vim.api.nvim_create_augroup('synopsis.dock', { clear = true })
+    -- The citation stays in Telescope's preview until Telescope previews a file of its own (the
+    -- selection moved); its window options then go back to Telescope's.
+    vim.api.nvim_create_autocmd('User', {
+      group = group, pattern = 'TelescopePreviewerLoaded',
+      callback = function(ev)
+        if (ev.data or {}).synopsis_citation or M.current ~= s or s.closed or not s.dock then return end
+        local w = s.dock.picker.preview_win
+        if not (w and vim.api.nvim_win_is_valid(w) and s.dock.saved_wo) then return end
+        local shown = vim.api.nvim_win_get_buf(w)
+        if shown == s.preview_msg_buf then return end
+        for _, b in pairs(s.preview_bufs or {}) do if b == shown then return end end
+        for k, v in pairs(s.dock.saved_wo) do vim.wo[w][k] = v end
+        s.dock.saved_wo = nil
+        s.preview_path, s.preview_first, s.preview_buf = nil, nil, nil
+      end,
+    })
     vim.api.nvim_create_autocmd('WinEnter', {
-      group = vim.api.nvim_create_augroup('synopsis.dock', { clear = true }),
+      group = group,
       callback = function()
         vim.schedule(function()
           if M.current ~= s or s.closed or s.opening ~= opening then return end
@@ -760,7 +841,6 @@ local function open_windows(s)
             vim.api.nvim_set_current_win(p.prompt_win)
             require('telescope.actions').select_default(prompt)
           elseif w == p.prompt_win then
-            give_back_preview(s)
             if vim.api.nvim_get_mode().mode:sub(1, 1) ~= 'i' then vim.cmd 'startinsert!' end
           end
         end)

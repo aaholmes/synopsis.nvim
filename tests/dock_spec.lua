@@ -161,20 +161,42 @@ H.check('Tab in the input moves to the next citation and shows it in the preview
   H.eq(vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1], 'return "b"', 'b.lua is shown')
 end)
 
-H.check("going back to the prompt gives the preview back to the picker's file", function()
+local function selected_name()
+  local entry = state.get_selected_entry()
+  return entry and vim.fs.basename(entry.path or entry.filename or entry.value)
+end
+
+H.check('the selected link\'s file is selected in the results, and the synopsis pane follows it', function()
+  H.eq(selected_name(), 'b.lua', 'b.lua selected in the results')
+  H.eq(vim.fs.basename(require('synopsis').core.current or ''), 'b.lua', 'the pane is about b.lua')
+end)
+
+H.check('going back to the prompt keeps the citation in the preview, and its file selected', function()
   press(cur().input_buf, 'i', '<C-Space>')
   vim.wait(300)
   local buf, rows = preview_cited()
-  H.eq(next(rows), nil, 'no cited lines in the preview')
-  local entry = state.get_selected_entry()
-  local name = vim.fs.basename(entry.path or entry.filename or entry.value)
-  local want = vim.fn.readfile(root .. '/' .. name)[1]
-  H.eq(vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1], want, 'the selected file ' .. name)
+  H.eq(vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1], 'return "b"', 'b.lua still shown')
+  H.eq(rows[1], true, 'its cited line still highlighted')
+  H.eq(selected_name(), 'b.lua', 'b.lua still selected')
+end)
+
+H.check("moving the selection in the picker shows Telescope's preview of that file, with its window options", function()
+  local w = picker().preview_win
+  actions.move_selection_next(prompt_buf())
+  vim.wait(500, function() return next(select(2, preview_cited())) == nil end, 10)
+  local buf, rows = preview_cited()
+  H.eq(next(rows), nil, 'no cited lines')
+  local want = vim.fn.readfile(root .. '/' .. selected_name())[1]
+  H.eq(vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1], want, 'the selected file ' .. selected_name())
+  H.eq(vim.wo[w].number, false, "Telescope's window options back")
 end)
 
 H.check('Ctrl-Space on another file continues the chat, noting the new file once', function()
-  actions.move_selection_next(prompt_buf())
-  vim.wait(300)
+  for _ = 1, 3 do -- to a file other than the chat's
+    if selected_name() ~= vim.fs.basename(cur().about.path) then break end
+    actions.move_selection_next(prompt_buf())
+    vim.wait(300)
+  end
   local entry = state.get_selected_entry()
   local name = vim.fs.basename(entry.path or entry.filename or entry.value)
   ctrl_space()
@@ -304,7 +326,7 @@ H.check("the docked chat's borders use Telescope's highlight groups; a chat on i
   close_all()
 end)
 
-H.check("previewing a citation fires Telescope's preview event with its filetype; going back fires it for the selected file", function()
+H.check("previewing a citation fires Telescope's preview event with its filetype; going back fires none for another file", function()
   open_picker()
   ctrl_space()
   local events = {}
@@ -320,12 +342,8 @@ H.check("previewing a citation fires Telescope's preview event with its filetype
   H.eq(e.buf, vim.api.nvim_win_get_buf(picker().preview_win), 'fired with the preview buffer current')
   events = {}
   press(cur().input_buf, 'i', '<C-Space>')
-  vim.wait(500, function() return #events > 0 end, 10)
-  local entry = state.get_selected_entry()
-  local name = vim.fs.basename(entry.path or entry.filename or entry.value)
-  local last = events[#events]
-  H.eq(last ~= nil and not last.data.synopsis_citation, true, 'an event for the picker: ' .. vim.inspect(events))
-  H.eq(vim.fs.basename(last.data.bufname or ''), name, 'for the selected file')
+  vim.wait(300)
+  for _, ev in ipairs(events) do H.eq(vim.fs.basename(ev.data.bufname or ''), 'b.lua', 'only b.lua: ' .. vim.inspect(events)) end
   vim.api.nvim_del_augroup_by_id(group)
   close_all()
 end)
@@ -412,13 +430,31 @@ H.check('clicks move the focus between the picker and the chat', function()
   vim.wait(300)
   H.eq(vim.api.nvim_get_current_win(), p.prompt_win, 'moved to the prompt')
   H.eq(p:get_selection_row(), target - 1, 'clicked row selected')
-  -- Entering the prompt from the chat hands the preview back to the picker.
+  -- Entering the prompt from the chat keeps the citation in the preview.
   ctrl_space()
   answer.preview('b.lua', 1)
   H.eq(cited_rows() > 0, true, 'citation shown')
   vim.api.nvim_set_current_win(p.prompt_win)
   vim.wait(300)
-  H.eq(cited_rows(), 0, 'preview back to the selected file')
+  H.eq(cited_rows() > 0, true, 'citation still shown')
+  close_all()
+end)
+
+H.check('a cited file missing from the results clears the prompt, then is selected', function()
+  close_all()
+  open_picker()
+  picker():set_prompt 'b.lua'
+  vim.wait(1000, function() return picker().manager and picker().manager:num_results() == 1 end, 10)
+  H.eq(selected_name(), 'b.lua', 'only b.lua listed')
+  ctrl_space()
+  ask 'Where?' -- the first link is a.lua:2
+  vim.wait(1000, function() return selected_name() == 'a.lua' end, 10)
+  H.eq(picker():_get_prompt(), '', 'prompt cleared')
+  H.eq(selected_name(), 'a.lua', 'a.lua selected')
+  local buf, rows = preview_cited()
+  H.eq(vim.api.nvim_buf_get_lines(buf, 2, 3, false)[1], 'function M.hi() return "hi" end', 'the citation still shown')
+  H.eq(rows[2] and rows[3], true, 'its lines highlighted')
+  H.eq(vim.api.nvim_get_current_win(), cur().input_win, 'focus stays in the chat')
   close_all()
 end)
 

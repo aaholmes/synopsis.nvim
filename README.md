@@ -132,9 +132,13 @@ paired over the same files or questions. Details are in `eval/*/RESULTS.md`.
   Only one key, Ctrl-Space, switches between the picker and the chat. Other plugins remap keys
   in every buffer (llama.vim maps and unmaps `<Tab>` as you type; blink.cmp maps `<C-n>`), so
   synopsis maps its keys in the input again after them.
-- **One preview, owned by the side with the focus.** The chat shows citations in Telescope's
-  preview. Which file it shows depends on where the focus is, so moving through the results
-  never replaces a citation you are reading.
+- **One previewed file, whichever side has the focus.** The chat shows citations in
+  Telescope's preview, and selecting a link also selects its file in Telescope's results, so
+  the results, the preview and the summary pane always agree. Switching sides never changes
+  the file; moving the selection in the picker does. A cited file that is not among the
+  results clears the prompt so that it can be selected, which means the results then list
+  every file rather than the last search. Telescope previews a file whenever its selection
+  changes, so synopsis moves the selection with that preview switched off.
 - **One conversation per repo, not per file.** Questions asked while browsing usually build on
   each other, so Ctrl-Space on a second file continues the chat, and the model is told the new
   file once. A cancelled question is removed from the messages, because the API rejects a
@@ -144,12 +148,16 @@ paired over the same files or questions. Details are in `eval/*/RESULTS.md`.
 
 Early. Both features work with Telescope's file and grep pickers and any OpenAI-compatible chat
 endpoint. Tested on macOS with Neovim 0.12.4 and Telescope commit `9377230`. GitHub Actions runs
-the 200 automated tests on Linux. The tests call the chat's mouse handler directly, since
+the 203 automated tests on Linux. The tests call the chat's mouse handler directly, since
 headless Neovim receives no real clicks.
 
-A known limitation: an inline equation drawn as an image by snacks can push the text after it
-onto a later row. Neovim decides where to wrap a line using the LaTeX source hidden behind the
-image, so a long equation leaves empty rows after it.
+Known limitations:
+- An inline equation drawn as an image by snacks can push the text after it onto a later row.
+  Neovim decides where to wrap a line using the LaTeX source hidden behind the image, so a long
+  equation leaves empty rows after it.
+- A cited file is selected in the results only if Telescope lists it. With an empty prompt,
+  Telescope keeps its first 250 results, and a grep picker lists nothing, so in a large repo or
+  a grep picker the citation is previewed without being selected.
 
 ## Future directions
 
@@ -230,11 +238,12 @@ The `:SynopsisAsk` chat has:
   sent (see `exclude`) are never shown.
 
 Opened from Telescope on a screen at least 180 columns wide, the chat takes a column to the
-right of the picker and uses Telescope's preview and border colours. Going back to the prompt
-shows the selected file in the preview again, and `q` in the chat closes only the chat. A cited
-file fires the same event as a previewed one (`User TelescopePreviewerLoaded`), so border
-colours set by filetype follow it. Otherwise the chat opens in windows of its own, with the
-preview in a pane on the right when the screen is at least 120 columns wide.
+right of the picker and uses Telescope's preview and border colours. The selected link's file
+is selected in the results too, and stays previewed when you go back to the prompt; `q` in the
+chat closes only the chat. A cited file fires the same event as a previewed one
+(`User TelescopePreviewerLoaded`), so border colours set by filetype follow it. Otherwise the
+chat opens in windows of its own, with the preview in a pane on the right when the screen is
+at least 120 columns wide.
 
 Each repo keeps its conversation until you quit Neovim. Reopening the chat, or Ctrl-Space on
 another file, continues it; a muted "Now viewing `b.lua`" line marks the change of file. Closing
