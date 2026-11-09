@@ -183,10 +183,13 @@ end)
 H.check("moving the selection in the picker shows Telescope's preview of that file, with its window options", function()
   local w = picker().preview_win
   actions.move_selection_next(prompt_buf())
-  vim.wait(500, function() return next(select(2, preview_cited())) == nil end, 10)
+  -- Telescope fills its preview buffer asynchronously: wait for the selected file's text.
+  local want = vim.fn.readfile(root .. '/' .. selected_name())[1]
+  vim.wait(2000, function()
+    return vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(w), 0, 1, false)[1] == want
+  end, 10)
   local buf, rows = preview_cited()
   H.eq(next(rows), nil, 'no cited lines')
-  local want = vim.fn.readfile(root .. '/' .. selected_name())[1]
   H.eq(vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1], want, 'the selected file ' .. selected_name())
   H.eq(vim.wo[w].number, false, "Telescope's window options back")
 end)
@@ -279,9 +282,9 @@ end)
 H.check("with no link selected, clicking the preview from the chat opens the picker's file, as Telescope does", function()
   close_all()
   open_picker()
-  local entry = state.get_selected_entry()
-  local name = vim.fs.basename(entry.path or entry.filename or entry.value)
   ctrl_space()
+  -- The file selected when the click lands: find_files may still be adding results before then.
+  local name = selected_name()
   vim.api.nvim_set_current_win(picker().preview_win)
   vim.wait(500, function() return prompt_buf() == nil end, 10)
   H.eq(prompt_buf(), nil, 'picker closed')
