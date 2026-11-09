@@ -311,6 +311,14 @@ function M.preview(path, first, last)
   vim.api.nvim_win_call(win, function() vim.cmd 'normal! zz' end)
   local range = last > first and string.format('%d–%d', first, last) or tostring(first)
   set_preview_title(s, win, string.format(' %s:%s ', path, range))
+  if s.dock then
+    -- Telescope fires this whenever its preview changes, with the preview buffer current;
+    -- listeners such as filetype border colours then treat the citation like a previewed file.
+    vim.api.nvim_win_call(win, function()
+      vim.api.nvim_exec_autocmds('User', { pattern = 'TelescopePreviewerLoaded', data = {
+        title = path, bufname = s.root .. '/' .. path, filetype = vim.bo[buf].filetype, synopsis_citation = true } })
+    end)
+  end
 end
 
 ---Every citation in the conversation buffer, in order: { row (1-based), s, e, path, line, last }.
@@ -637,6 +645,10 @@ local function open_windows(s)
   for opt, v in pairs { wrap = true, linebreak = true, breakindent = true, conceallevel = 2, concealcursor = 'nc' } do
     vim.wo[s.win][opt] = v
   end
+  -- A float copies the options of the window it is opened from, so always set this. Beside a
+  -- picker, the chat uses Telescope's groups, so it is coloured like the picker.
+  vim.wo[s.win].winhighlight = s.dock
+    and 'Normal:TelescopeResultsNormal,FloatBorder:TelescopeResultsBorder,FloatTitle:TelescopeResultsTitle' or ''
 
   if g.preview and not s.dock then
     s.preview_win = vim.api.nvim_open_win(preview_message(s, 'Cited lines appear here; Tab moves between citations.'), false, {
@@ -652,6 +664,9 @@ local function open_windows(s)
     border = 'rounded', title = ' Ask ', title_pos = 'left',
   })
   vim.wo[s.input_win].wrap = true
+  vim.wo[s.input_win].winhighlight = s.dock
+    and 'Normal:TelescopePromptNormal,FloatBorder:TelescopePromptBorder,FloatTitle:TelescopePromptTitle' or ''
+  if s.preview_win then vim.wo[s.preview_win].winhighlight = '' end
   set_title(s)
 
   local function map_keys(buf, modes, keys, fn, desc)
@@ -669,21 +684,29 @@ local function open_windows(s)
   map_keys(s.buf, 'n', km.prev_citation, function() step_citation(s, -1) end, 'preview the previous citation')
   map_keys(s.buf, 'n', km.new_chat, M.new_chat, 'start a new chat')
   vim.api.nvim_create_autocmd('CursorMoved', { buffer = s.buf, callback = function() preview_at_cursor(s) end })
-  -- The input panel.
-  map_keys(s.input_buf, { 'i', 'n' }, '<CR>', function() send_input(s) end, 'send the question')
-  map_keys(s.input_buf, { 'i', 'n' }, km.chat, function()
-    vim.cmd 'stopinsert'
-    if vim.api.nvim_win_is_valid(s.win) then vim.api.nvim_set_current_win(s.win) end
-  end, 'go to the chat')
-  map_keys(s.input_buf, { 'i', 'n' }, km.scroll_down, function() scroll(s, 1) end, 'scroll the chat down')
-  map_keys(s.input_buf, { 'i', 'n' }, km.scroll_up, function() scroll(s, -1) end, 'scroll the chat up')
-  map_keys(s.input_buf, { 'i', 'n' }, km.new_chat, M.new_chat, 'start a new chat')
-  map_keys(s.input_buf, { 'i', 'n' }, '<C-c>', M.close, 'close the chat')
-  map_keys(s.input_buf, 'n', 'q', M.close, 'close the chat')
-  if s.dock then
-    map_keys(s.buf, 'n', km.picker, function() to_prompt(s) end, 'go to the picker')
-    map_keys(s.input_buf, { 'i', 'n' }, km.picker, function() to_prompt(s) end, 'go to the picker')
+  -- The input panel. No completion menu there (blink.cmp and others honour this).
+  vim.b[s.input_buf].completion = false
+  local function input_keys()
+    map_keys(s.input_buf, { 'i', 'n' }, '<CR>', function() send_input(s) end, 'send the question')
+    map_keys(s.input_buf, { 'i', 'n' }, km.chat, function()
+      vim.cmd 'stopinsert'
+      if vim.api.nvim_win_is_valid(s.win) then vim.api.nvim_set_current_win(s.win) end
+    end, 'go to the chat')
+    map_keys(s.input_buf, { 'i', 'n' }, km.scroll_down, function() scroll(s, 1) end, 'scroll the chat down')
+    map_keys(s.input_buf, { 'i', 'n' }, km.scroll_up, function() scroll(s, -1) end, 'scroll the chat up')
+    map_keys(s.input_buf, { 'i', 'n' }, km.new_chat, M.new_chat, 'start a new chat')
+    map_keys(s.input_buf, { 'i', 'n' }, '<C-c>', M.close, 'close the chat')
+    if s.dock then map_keys(s.input_buf, { 'i', 'n' }, km.picker, function() to_prompt(s) end, 'go to the picker') end
   end
+  input_keys()
+  map_keys(s.input_buf, 'n', 'q', M.close, 'close the chat')
+  if s.dock then map_keys(s.buf, 'n', km.picker, function() to_prompt(s) end, 'go to the picker') end
+  -- Other plugins map keys in each buffer on InsertEnter (llama.vim maps <C-g>, blink.cmp <C-n>
+  -- and <C-e>); map ours again after them.
+  vim.api.nvim_create_autocmd('InsertEnter', {
+    buffer = s.input_buf,
+    callback = function() vim.schedule(function() if vim.api.nvim_buf_is_valid(s.input_buf) then input_keys() end end) end,
+  })
 
   -- A session is reused when the chat reopens, so tie these to this opening of its windows.
   s.opening = (s.opening or 0) + 1
@@ -707,11 +730,46 @@ local function open_windows(s)
         vim.schedule(function()
           if M.current ~= s or s.closed or s.opening ~= opening then return end
           local w = vim.api.nvim_get_current_win()
-          if vim.api.nvim_win_get_config(w).relative == '' then M.close { picker = true, focus = w } end
+          if vim.api.nvim_win_get_config(w).relative == '' then return M.close { picker = true, focus = w } end
+          local p = s.dock.picker
+          if w == p.results_win then
+            -- A click on the results from the chat: select that row, and type in the prompt.
+            local row = vim.api.nvim_win_get_cursor(w)[1]
+            vim.api.nvim_set_current_win(p.prompt_win)
+            p:set_selection(row - 1)
+            if vim.api.nvim_get_mode().mode:sub(1, 1) ~= 'i' then vim.cmd 'startinsert!' end
+          elseif w == p.prompt_win then
+            give_back_preview(s)
+            if vim.api.nvim_get_mode().mode:sub(1, 1) ~= 'i' then vim.cmd 'startinsert!' end
+          end
         end)
       end,
     })
   end
+end
+
+---Move the focus to the chat window at pos (a getmousepos() table): the conversation, with the
+---cursor at the clicked cell, or the input panel, in Insert mode. False for any other window.
+function M.click(pos)
+  local s = M.current
+  if not (is_open(s) and pos) then return false end
+  if pos.winid == s.win then
+    vim.api.nvim_set_current_win(s.win)
+    vim.cmd 'stopinsert'
+    local n = vim.api.nvim_buf_line_count(s.buf)
+    pcall(vim.api.nvim_win_set_cursor, s.win, { math.max(1, math.min(pos.line, n)), math.max(0, (pos.column or 1) - 1) })
+    return true
+  elseif pos.winid == s.input_win then
+    to_input(s)
+    return true
+  end
+  return false
+end
+
+---Whether winid is one of the open chat's windows.
+function M.owns(winid)
+  local s = M.current
+  return is_open(s) and (winid == s.win or winid == s.input_win)
 end
 
 ---Move the docked chat to the box its picker now leaves free (after a resize).

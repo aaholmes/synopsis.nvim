@@ -238,6 +238,132 @@ H.check('<CR> on a citation closes both and opens the file at the line', functio
   H.eq(vim.api.nvim_win_get_config(0).relative, '', 'in an ordinary window')
 end)
 
+local function wh(win) return vim.wo[win].winhighlight end
+
+H.check("the docked chat's borders use Telescope's highlight groups; a chat on its own does not", function()
+  close_all()
+  open_picker()
+  ctrl_g()
+  H.eq(wh(cur().win):find('FloatBorder:TelescopeResultsBorder', 1, true) ~= nil, true, wh(cur().win))
+  H.eq(wh(cur().input_win):find('FloatBorder:TelescopePromptBorder', 1, true) ~= nil, true, wh(cur().input_win))
+  close_all()
+  answer.open { root = root, config = require('synopsis').config }
+  vim.wait(500, chat_open, 10)
+  H.eq(wh(cur().win):find('Telescope', 1, true), nil, 'standalone: ' .. wh(cur().win))
+  close_all()
+end)
+
+H.check("previewing a citation fires Telescope's preview event with its filetype; going back fires it for the selected file", function()
+  open_picker()
+  ctrl_g()
+  local events = {}
+  local group = vim.api.nvim_create_augroup('test-preview-events', { clear = true })
+  vim.api.nvim_create_autocmd('User', {
+    group = group, pattern = 'TelescopePreviewerLoaded',
+    callback = function(ev) table.insert(events, { data = ev.data or {}, buf = vim.api.nvim_get_current_buf() }) end,
+  })
+  answer.preview('b.lua', 1)
+  local e = events[#events]
+  H.eq(e and e.data.filetype, 'lua', 'filetype')
+  H.eq(e.data.synopsis_citation, true, 'marked as a citation')
+  H.eq(e.buf, vim.api.nvim_win_get_buf(picker().preview_win), 'fired with the preview buffer current')
+  events = {}
+  press(cur().input_buf, 'i', '<C-g>')
+  vim.wait(500, function() return #events > 0 end, 10)
+  local entry = state.get_selected_entry()
+  local name = vim.fs.basename(entry.path or entry.filename or entry.value)
+  local last = events[#events]
+  H.eq(last ~= nil and not last.data.synopsis_citation, true, 'an event for the picker: ' .. vim.inspect(events))
+  H.eq(vim.fs.basename(last.data.bufname or ''), name, 'for the selected file')
+  vim.api.nvim_del_augroup_by_id(group)
+  close_all()
+end)
+
+---Whether buf's Insert-mode lhs (default <C-g>) is synopsis's own.
+local function ours(buf, lhs)
+  for _, m in ipairs(vim.api.nvim_buf_get_keymap(buf, 'i')) do
+    if vim.keycode(m.lhs) == vim.keycode(lhs or '<C-g>') then return (m.desc or ''):find('^synopsis:') ~= nil end
+  end
+  return false
+end
+---Fire InsertEnter in win's buffer, as entering Insert mode there would, and let scheduled work run.
+local function insert_enter(win)
+  vim.api.nvim_set_current_win(win)
+  vim.api.nvim_exec_autocmds('InsertEnter', { buffer = vim.api.nvim_win_get_buf(win) })
+  vim.wait(50)
+end
+
+H.check("the chat's keys survive other plugins mapping them on InsertEnter, as llama.vim and blink.cmp do", function()
+  local fake = vim.api.nvim_create_augroup('fake-llama', { clear = true })
+  -- llama.vim maps <C-g> on InsertEnter and can unmap it again; blink.cmp maps <C-n>, <C-e>, ...
+  vim.api.nvim_create_autocmd('InsertEnter', { group = fake, pattern = '*',
+    command = 'inoremap <buffer> <C-g> <Nop> | inoremap <buffer> <C-n> <Nop> | inoremap <buffer> <C-e> <Nop>' })
+  vim.api.nvim_create_autocmd('InsertLeave', { group = fake, pattern = '*', command = 'silent! iunmap <buffer> <C-g>' })
+  open_picker()
+  insert_enter(picker().prompt_win)
+  H.eq(ours(prompt_buf()), true, 'prompt key, before the chat opens')
+  for i = 1, 3 do
+    press(prompt_buf(), 'i', '<C-g>')
+    vim.wait(2000, chat_open, 10)
+    vim.wait(50)
+    H.eq(vim.api.nvim_get_current_win(), cur().input_win, i .. ': in the input')
+    vim.api.nvim_exec_autocmds('InsertLeave', { buffer = cur().input_buf })
+    insert_enter(cur().input_win)
+    for _, k in ipairs { '<C-g>', '<C-n>', '<C-e>' } do H.eq(ours(cur().input_buf, k), true, i .. ': input ' .. k) end
+    H.eq(vim.b[cur().input_buf].completion, false, 'completion menus off in the input')
+    press(cur().input_buf, 'i', '<C-g>')
+    vim.wait(50)
+    H.eq(vim.api.nvim_get_current_win(), picker().prompt_win, i .. ': in the prompt')
+    insert_enter(picker().prompt_win)
+    H.eq(ours(prompt_buf()), true, i .. ': prompt key')
+  end
+  vim.api.nvim_del_augroup_by_id(fake)
+  close_all()
+end)
+
+local function cited_rows()
+  local buf = vim.api.nvim_win_get_buf(picker().preview_win)
+  local ns = vim.api.nvim_get_namespaces()['synopsis.preview']
+  return #vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, {})
+end
+
+H.check('clicks move the focus between the picker and the chat', function()
+  open_picker()
+  ctrl_g()
+  press(cur().input_buf, 'i', '<C-g>')
+  vim.wait(50)
+  local click
+  for _, m in ipairs(vim.api.nvim_buf_get_keymap(prompt_buf(), 'i')) do
+    if m.lhs == '<LeftMouse>' then click = m end
+  end
+  H.eq(click and (click.desc or ''):find('^synopsis:') ~= nil, true, "the prompt's <LeftMouse> is synopsis's")
+  H.eq(answer.click { winid = cur().win, line = 1, column = 3 }, true, 'click handled')
+  H.eq(vim.api.nvim_get_current_win(), cur().win, 'conversation focused')
+  H.eq(vim.api.nvim_win_get_cursor(cur().win)[1] == 1 and vim.api.nvim_win_get_cursor(cur().win)[2] == 2, true,
+    vim.inspect(vim.api.nvim_win_get_cursor(cur().win)))
+  H.eq(answer.click { winid = cur().input_win, line = 1, column = 1 }, true, 'click handled')
+  H.eq(vim.api.nvim_get_current_win(), cur().input_win, 'input focused')
+  H.eq(answer.click { winid = picker().results_win, line = 1, column = 1 }, false, 'results left to Telescope')
+  -- From the chat, a click lands in a Telescope window; entering the results selects that row.
+  local p = picker()
+  local rows = vim.api.nvim_buf_get_lines(p.results_bufnr, 0, -1, false)
+  local target
+  for r, l in ipairs(rows) do if l ~= '' and r - 1 ~= p:get_selection_row() then target = r end end
+  vim.api.nvim_win_set_cursor(p.results_win, { target, 0 })
+  vim.api.nvim_set_current_win(p.results_win)
+  vim.wait(300)
+  H.eq(vim.api.nvim_get_current_win(), p.prompt_win, 'moved to the prompt')
+  H.eq(p:get_selection_row(), target - 1, 'clicked row selected')
+  -- Entering the prompt from the chat hands the preview back to the picker.
+  ctrl_g()
+  answer.preview('b.lua', 1)
+  H.eq(cited_rows() > 0, true, 'citation shown')
+  vim.api.nvim_set_current_win(p.prompt_win)
+  vim.wait(300)
+  H.eq(cited_rows(), 0, 'preview back to the selected file')
+  close_all()
+end)
+
 H.check('below side_min_columns, Ctrl-g closes the picker and opens the chat on its own', function()
   close_all()
   vim.o.columns = 160

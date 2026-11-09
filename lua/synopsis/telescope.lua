@@ -146,6 +146,17 @@ end
 ---autocmd in its PickerInsert group. Returns the freed box { row, col, width, height }.
 function M.dock(picker, prompt)
   vim.api.nvim_clear_autocmds { group = 'PickerInsert', event = 'BufLeave', buffer = prompt }
+  -- Telescope's own click handler only knows its results and preview windows, and swallows
+  -- clicks elsewhere; a click on the chat moves the focus there.
+  vim.keymap.set({ 'i', 'n' }, '<LeftMouse>', function()
+    local pos = vim.fn.getmousepos()
+    local answer = package.loaded['synopsis.answer']
+    if answer and answer.owns(pos.winid) then
+      vim.schedule(function() answer.click(pos) end)
+      return ''
+    end
+    return require('telescope.actions').mouse_click(prompt)
+  end, { buffer = prompt, expr = true, desc = 'synopsis: click in the picker or the chat' })
   picker._synopsis_side = true
   relayout(picker)
   return picker._synopsis_dock
@@ -214,10 +225,19 @@ function M.attach(core, keymaps)
           deny = { function() core:decide 'deny' end, 'turn synopses off for this repo' },
           ask = { function() M.ask_about(prompt, picker) end, 'ask about this file' },
         }
-        for name, action in pairs(actions) do
-          local lhs = M.keymaps[name]
-          if lhs then vim.keymap.set({ 'i', 'n' }, lhs, action[1], { buffer = prompt, desc = 'synopsis: ' .. action[2] }) end
+        local function set_keys()
+          for name, action in pairs(actions) do
+            local lhs = M.keymaps[name]
+            if lhs then vim.keymap.set({ 'i', 'n' }, lhs, action[1], { buffer = prompt, desc = 'synopsis: ' .. action[2] }) end
+          end
         end
+        set_keys()
+        -- Other plugins may map the same keys in each buffer on InsertEnter (llama.vim maps
+        -- <C-g>); map them again after them.
+        vim.api.nvim_create_autocmd('InsertEnter', {
+          group = group, buffer = prompt,
+          callback = function() vim.schedule(function() if vim.api.nvim_buf_is_valid(prompt) then set_keys() end end) end,
+        })
         vim.api.nvim_create_autocmd({ 'BufWipeout', 'BufUnload' }, {
           group = group, buffer = prompt, once = true,
           callback = function()
@@ -251,6 +271,7 @@ function M.attach(core, keymaps)
     group = group,
     pattern = 'TelescopePreviewerLoaded',
     callback = function(ev)
+      if ev.data and ev.data.synopsis_citation then return end -- the chat's citations keep the pane on the selected file
       local picker = current_picker()
       if not (picker and picker._synopsis and picker.layout_strategy == 'synopsis') then return end
       open_pane(picker)
