@@ -10,15 +10,17 @@ Telescope's file and grep pickers:
 - **A chat about the repo**, beside the picker. The model searches and reads the code to answer,
   and cites the lines it used. Tab through the citations and Telescope's preview shows each one.
 
-![Browsing files in Telescope: a cached synopsis appears immediately, then a new file's synopsis is written after a one-second pause on it](docs/demo.gif)
+![Browsing modded-nanogpt in Telescope: a cached summary appears immediately, then a new file's summary is written after a one-second pause on it](docs/demo.gif)
 
-`softmax.py` already has a summary, so it appears immediately; `related.lua` gets one after a
+Browsing [modded-nanogpt](https://github.com/KellerJordan/modded-nanogpt): `polar_express.py`
+already has a summary, so it appears immediately; `model/attention.py` gets one after a
 one-second pause.
 
-![Asking which files build a prompt: the chat opens beside Telescope, the model searches and reads the code, and Tab moves Telescope's preview and selection through the cited files](docs/chat.gif)
+![Asking what modded-nanogpt's n-gram table adds to the model: the chat opens beside Telescope, the model searches and reads the code, and Tab moves Telescope's preview and selection through the cited files](docs/chat.gif)
 
-Ctrl-Space opens the chat beside the picker. The answer took 10 s, shown as it happened. Tab
-moves through the citations, and the preview, the selected result and the summary follow.
+Ctrl-Space opens the chat beside the picker. The 16 s wait for the answer is shown at 4× speed;
+the footer gives the real time. Tab moves through the citations, and the preview, the selected
+result and the summary follow.
 
 ## Features
 
