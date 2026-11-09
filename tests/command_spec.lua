@@ -11,23 +11,25 @@ local synopsis = require 'synopsis'
 synopsis.setup {
   llm = { url = server.url, model = 'm', api_key_env = 'SYNOPSIS_TEST_KEY' },
   consent = 'always',
-  ask = { max_rounds = 3, keymaps = { chat = '<C-u>' } },
+  ask = { max_rounds = 3, keymaps = { new_chat = '<C-u>' } },
 }
 
 H.check('ask settings merge with the defaults', function()
   local a = synopsis.config.ask
   H.eq(a.max_rounds, 3, 'override')
   H.eq(a.max_map_chars, 150000, 'default kept')
-  H.eq(a.keymaps.chat, '<C-u>', 'key override')
+  H.eq(a.keymaps.new_chat, '<C-u>', 'key override')
   H.eq(a.render, true, 'render default')
   H.eq(a.preview, true, 'preview default')
   H.eq(a.preview_min_columns, 120, 'preview width default')
-  H.eq(a.keymaps.new_chat, '<C-n>', 'new chat key')
+  H.eq(a.keymaps.chat, nil, 'no key into the conversation, which never keeps the focus')
+  H.eq(a.keymaps.scroll_down, nil, 'no scroll keys')
+  H.eq(a.keymaps.open, '<CR>', 'open key')
   H.eq(a.side_min_columns, 180, 'docked chat width default')
-  H.eq(a.keymaps.picker, '<C-g>', 'key back to the picker')
+  H.eq(a.keymaps.picker, '<C-Space>', 'key back to the picker')
   H.eq(a.keymaps.next_citation, '<Tab>', 'next citation key')
   H.eq(a.keymaps.prev_citation, '<S-Tab>', 'previous citation key')
-  H.eq(synopsis.config.keymaps.ask, '<C-g>', 'Telescope key')
+  H.eq(synopsis.config.keymaps.ask, '<C-Space>', 'Telescope key')
   H.eq(a.keymaps.locations, 'gl', 'key default kept')
 end)
 

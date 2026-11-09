@@ -39,19 +39,20 @@ local defaults = {
   -- uses <C-u>/<C-d> for the preview and <PageUp>/<PageDown> for the results); allow / deny
   -- answer whether this repo's files may be sent. Ctrl keys rather than Alt keys, because many
   -- macOS terminals send Option as a character, not as Alt.
-  -- ask opens the :SynopsisAsk chat about the selected file.
-  keymaps = { scroll_up = '<C-y>', scroll_down = '<C-e>', allow = '<C-a>', deny = '<C-o>', ask = '<C-g>' },
+  -- ask opens the :SynopsisAsk chat about the selected file, or moves to it when it is open.
+  keymaps = { scroll_up = '<C-y>', scroll_down = '<C-e>', allow = '<C-a>', deny = '<C-o>', ask = '<C-Space>' },
   -- :SynopsisAsk. The model gets a map of the repo's files (leading comments and definition
   -- names, built without a model) and tools to search and read the code, for up to max_rounds
   -- turns of tool calls. Files past max_map_chars are listed by path only. render: draw the
   -- chat's markdown and LaTeX with markview.nvim and snacks.nvim when they are installed.
   -- preview: a pane on the right showing the cited lines, on screens at least
   -- preview_min_columns wide. Each repo's conversation is kept for the editor session. Opened
-  -- with Ctrl-g on a screen at least side_min_columns wide, the chat sits beside the picker,
+  -- with Ctrl-Space on a screen at least side_min_columns wide, the chat sits beside the picker,
   -- which stays open, and shows cited lines in Telescope's preview.
-  -- Keys: close, open, locations, input, next_citation and prev_citation in the conversation;
-  -- chat and scroll_* in the input panel, where <CR> sends; new_chat in both, and picker (back to
-  -- the picker's prompt, when beside one); false for none.
+  -- Keys, all in the input panel, where the typing cursor stays: open (<CR>) sends the question,
+  -- or with nothing typed opens the selected link; next_citation / prev_citation move the
+  -- selected link; picker goes back to the picker's prompt, when beside one; close and locations
+  -- in Normal mode; false for none.
   ask = {
     max_rounds = 10,
     max_map_chars = 150000,
@@ -60,9 +61,8 @@ local defaults = {
     preview_min_columns = 120,
     side_min_columns = 180,
     keymaps = {
-      close = { 'q', '<Esc>' }, open = '<CR>', locations = 'gl', input = { 'i', 'a', '<C-j>' },
-      chat = '<C-k>', scroll_down = '<C-e>', scroll_up = '<C-y>', new_chat = '<C-n>',
-      next_citation = '<Tab>', prev_citation = '<S-Tab>', picker = '<C-g>',
+      close = { 'q', '<Esc>' }, open = '<CR>', locations = 'gl', new_chat = '<C-n>',
+      next_citation = '<Tab>', prev_citation = '<S-Tab>', picker = '<C-Space>',
     },
   },
 }

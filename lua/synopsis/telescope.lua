@@ -233,7 +233,7 @@ function M.attach(core, keymaps)
         end
         set_keys()
         -- Other plugins may map the same keys in each buffer on InsertEnter (llama.vim maps
-        -- <C-g>); map them again after them.
+        -- its trigger key); map them again after them.
         vim.api.nvim_create_autocmd('InsertEnter', {
           group = group, buffer = prompt,
           callback = function() vim.schedule(function() if vim.api.nvim_buf_is_valid(prompt) then set_keys() end end) end,

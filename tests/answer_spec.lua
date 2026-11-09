@@ -20,8 +20,8 @@ local function config(server, over)
     llm = { url = server.url, model = 'm', api_key_env = 'SYNOPSIS_TEST_KEY', params = {}, timeout_ms = 5000 },
     consent = 'always', exclude = { '.env' }, max_bytes = 100 * 1024,
     ask = { max_rounds = 4, max_map_chars = 150000, retry_ms = 10, render = true, preview = true, preview_min_columns = 120,
-      keymaps = { close = { 'q', '<Esc>' }, open = '<CR>', locations = 'gl', input = { 'i', 'a', '<C-j>' }, chat = '<C-k>',
-        scroll_down = '<C-e>', scroll_up = '<C-y>', new_chat = '<C-n>', next_citation = '<Tab>', prev_citation = '<S-Tab>' } },
+      keymaps = { close = { 'q', '<Esc>' }, open = '<CR>', locations = 'gl', new_chat = '<C-n>', next_citation = '<Tab>',
+        prev_citation = '<S-Tab>', picker = '<C-Space>' } },
   }, over or {})
 end
 local function cur() return answer.current end
@@ -172,13 +172,12 @@ H.check('sending while an answer is coming sends nothing and says so', function(
   H.eq(#server.requests, 1, 'one request')
 end)
 
-H.check('<C-k> moves from the input to the chat, and i moves back', function()
+H.check('the conversation never keeps the focus: entering it goes back to the input', function()
   reset()
   local server = mock.start 'A.'
   answer.open { root = repo, config = config(server) }
-  press(cur().input_buf, 'i', '<C-k>')
-  H.eq(vim.api.nvim_get_current_win(), cur().win, 'chat')
-  press(cur().buf, 'n', 'i')
+  vim.api.nvim_set_current_win(cur().win)
+  vim.wait(100)
   H.eq(vim.api.nvim_get_current_win(), cur().input_win, 'input')
 end)
 
@@ -211,15 +210,13 @@ H.check('a chat about a file tells the model which file, in the first question o
   H.eq(server.requests[2].body.messages[4].content, 'And then?', 'follow-up plain')
 end)
 
-H.check('<CR> on a path:line citation opens that file at that line', function()
+H.check('<CR> in an empty input opens the selected citation at its line', function()
   reset()
   local server = mock.start 'The function is at a.lua:3 in the repo.'
   answer.open { root = repo, question = 'Q?', config = config(server) }
   vim.wait(3000, idle, 10)
-  local row, l = row_of 'a.lua:3'
-  vim.api.nvim_set_current_win(cur().win)
-  vim.api.nvim_win_set_cursor(cur().win, { row + 1, l:find('a.lua:3', 1, true) + 1 })
-  press(cur().buf, 'n', '<CR>')
+  vim.api.nvim_buf_set_lines(cur().input_buf, 0, -1, false, { '' })
+  press(cur().input_buf, 'i', '<CR>')
   H.eq(vim.fs.basename(vim.api.nvim_buf_get_name(0)), 'a.lua', 'file')
   H.eq(vim.api.nvim_win_get_cursor(0)[1], 3, 'line')
 end)
@@ -236,8 +233,7 @@ H.check('gl opens a Telescope picker of the cited locations', function()
   local server = mock.start 'See a.lua:3 and b.lua:1.'
   answer.open { root = repo, question = 'Q?', config = config(server) }
   vim.wait(3000, idle, 10)
-  vim.api.nvim_set_current_win(cur().win)
-  press(cur().buf, 'n', 'gl')
+  press(cur().input_buf, 'n', 'gl')
   local prompt
   vim.wait(2000, function()
     for _, b in ipairs(vim.api.nvim_list_bufs()) do
@@ -249,14 +245,13 @@ H.check('gl opens a Telescope picker of the cited locations', function()
   require('telescope.actions').close(prompt)
 end)
 
-H.check('q in the chat closes both windows and cancels the request in flight', function()
+H.check('q in the input (Normal mode) closes both windows and cancels the request in flight', function()
   reset()
   local server = mock.start({ tool_reply(call('c1', 'read', { path = 'a.lua' })), 'Late.' }, { delay_ms = 300 })
   answer.open { root = repo, question = 'Q?', config = config(server) }
   local win, input = cur().win, cur().input_win
   vim.wait(100)
-  vim.api.nvim_set_current_win(win)
-  press(cur().buf, 'n', 'q')
+  press(cur().input_buf, 'n', 'q')
   H.eq(vim.api.nvim_win_is_valid(win), false, 'chat closed')
   H.eq(vim.api.nvim_win_is_valid(input), false, 'input closed')
   vim.wait(1000)
@@ -281,11 +276,9 @@ H.check('opening a citation does not call on_close', function()
   local closed = 0
   answer.open { root = repo, question = 'Q?', config = config(server), on_close = function() closed = closed + 1 end }
   vim.wait(3000, idle, 10)
-  local row = row_of 'a.lua:3'
-  vim.api.nvim_set_current_win(cur().win)
-  vim.api.nvim_win_set_cursor(cur().win, { row + 1, 8 })
-  press(cur().buf, 'n', '<CR>')
+  press(cur().input_buf, 'i', '<CR>')
   vim.wait(100)
+  H.eq(vim.fs.basename(vim.api.nvim_buf_get_name(0)), 'a.lua', 'opened')
   H.eq(closed, 0, 'not called')
 end)
 
@@ -483,34 +476,64 @@ H.check("an answer's first citation is previewed with its lines highlighted", fu
   H.eq(vim.api.nvim_win_get_cursor(cur().preview_win)[1], 2, 'cursor')
 end)
 
-H.check('<Tab> and <S-Tab> move between citations, wrapping, and the preview follows', function()
+---The text the conversation highlights as the selected link.
+local function selected_link()
+  local ns = vim.api.nvim_get_namespaces()['synopsis.link']
+  for _, m in ipairs(vim.api.nvim_buf_get_extmarks(cur().buf, ns, 0, -1, { details = true })) do
+    if m[4].hl_group == 'SynopsisLink' then
+      return vim.api.nvim_buf_get_text(cur().buf, m[2], m[3], m[4].end_row, m[4].end_col, {})[1]
+    end
+  end
+end
+
+H.check('<Tab> and <S-Tab> in the input move the selected link, wrapping, and the preview follows', function()
   reset()
   local server = mock.start 'See a.lua:2-3 and b.lua:1.'
   answer.open { root = repo, question = 'Q?', config = config(server) }
   vim.wait(3000, idle, 10)
-  vim.api.nvim_set_current_win(cur().win)
-  vim.api.nvim_win_set_cursor(cur().win, { 1, 0 })
-  press(cur().buf, 'n', '<Tab>')
-  H.eq(cur().preview_path, 'a.lua', 'first')
-  press(cur().buf, 'n', '<Tab>')
+  H.eq(selected_link(), 'a.lua:2', 'the first link is selected')
+  press(cur().input_buf, 'i', '<Tab>')
   H.eq(cur().preview_path, 'b.lua', 'second')
+  H.eq(selected_link(), 'b.lua:1', 'highlighted')
   H.eq(cited_rows(), '0', 'b.lua line 1')
-  press(cur().buf, 'n', '<Tab>')
+  press(cur().input_buf, 'i', '<Tab>')
   H.eq(cur().preview_path, 'a.lua', 'wrapped forward')
-  press(cur().buf, 'n', '<S-Tab>')
+  press(cur().input_buf, 'i', '<S-Tab>')
   H.eq(cur().preview_path, 'b.lua', 'wrapped back')
+  H.eq(vim.api.nvim_get_current_win(), cur().input_win, 'still typing in the input')
 end)
 
-H.check('moving the cursor onto a citation previews it', function()
+H.check("a new answer selects its own first link, and shows the answer's start", function()
+  reset()
+  local server = mock.start { 'See a.lua:2.', 'Then b.lua:1.' }
+  answer.open { root = repo, question = 'Q?', config = config(server) }
+  vim.wait(3000, idle, 10)
+  type_question 'And?'
+  vim.wait(3000, function() return has 'Then b.lua:1.' and idle() end, 10)
+  H.eq(selected_link(), 'b.lua:1', 'second answer selected')
+  H.eq(cur().preview_path, 'b.lua', 'previewed')
+  local top = vim.fn.getwininfo(cur().win)[1].topline
+  H.eq(top <= row_of 'Then b.lua:1.' + 1, true, 'answer start visible')
+end)
+
+H.check('clicking a link selects and previews it, and the typing cursor stays in the input', function()
   reset()
   local server = mock.start 'See a.lua:2-3 and b.lua:1.'
   answer.open { root = repo, question = 'Q?', config = config(server) }
   vim.wait(3000, idle, 10)
   local row, l = row_of 'b.lua:1'
-  vim.api.nvim_set_current_win(cur().win)
-  vim.api.nvim_win_set_cursor(cur().win, { row + 1, (l:find('b.lua:1', 1, true)) })
-  vim.api.nvim_exec_autocmds('CursorMoved', { buffer = cur().buf })
+  H.eq(answer.click { winid = cur().win, line = row + 1, column = l:find('b.lua:1', 1, true) + 1 }, true, 'handled')
+  vim.wait(100)
   H.eq(cur().preview_path, 'b.lua', 'previewed')
+  H.eq(selected_link(), 'b.lua:1', 'selected')
+  H.eq(vim.api.nvim_get_current_win(), cur().input_win, 'input focused')
+  -- A click that lands in the conversation directly (from the input) does the same.
+  local ra, la = row_of 'a.lua:2'
+  vim.api.nvim_win_set_cursor(cur().win, { ra + 1, (la:find('a.lua:2', 1, true)) })
+  vim.api.nvim_set_current_win(cur().win)
+  vim.wait(100)
+  H.eq(selected_link(), 'a.lua:2', 'selected by entering')
+  H.eq(vim.api.nvim_get_current_win(), cur().input_win, 'back in the input')
 end)
 
 H.check('an excluded file is never shown in the preview', function()

@@ -4,6 +4,8 @@
 -- cited lines highlighted. Each repo keeps its conversation for the editor session, so closing
 -- and reopening the chat continues it. Each question runs the question loop (ask.lua) with the
 -- repo's file map; tool calls show as muted progress lines until the answer replaces them.
+-- The typing cursor stays in the input panel, where every key works; a separate link cursor
+-- (s.link), moved with Tab, selects a citation in the conversation and previews it.
 -- Closing any window closes all of them and cancels a question still being answered.
 -- Opened with o.dock = { prompt, picker } (from Telescope, on a wide screen), the chat instead
 -- sits in a column beside the picker, which stays open: the cited lines are shown in Telescope's
@@ -18,6 +20,7 @@ local M = { sessions = {} }
 local TOOLS = { 'rg', 'read', 'outline' }
 local ns = vim.api.nvim_create_namespace 'synopsis.answer'
 local ns_preview = vim.api.nvim_create_namespace 'synopsis.preview'
+local ns_link = vim.api.nvim_create_namespace 'synopsis.link'
 local plugin_root = vim.fs.dirname(vim.fs.dirname(vim.fs.dirname(debug.getinfo(1, 'S').source:sub(2))))
 local system_prompt
 local function system()
@@ -30,8 +33,9 @@ local function system()
 end
 
 ---Default colours, from the colour scheme: questions in Function's colour, bold; progress, footer
----and hints muted (Comment); cited lines in the preview like a selection (Visual). Defined with
----default = true, so a colour scheme or user wins.
+---and hints muted (Comment); cited lines in the preview like a selection (Visual); the selected
+---link like the current search match (CurSearch). Defined with default = true, so a colour
+---scheme or user wins.
 function M.highlights()
   local fn = vim.api.nvim_get_hl(0, { name = 'Function', link = false })
   vim.api.nvim_set_hl(0, 'SynopsisQuestion', { fg = fn.fg, ctermfg = fn.ctermfg, bold = true, default = true })
@@ -39,6 +43,7 @@ function M.highlights()
     vim.api.nvim_set_hl(0, g, { link = 'Comment', default = true })
   end
   vim.api.nvim_set_hl(0, 'SynopsisCited', { link = 'Visual', default = true })
+  vim.api.nvim_set_hl(0, 'SynopsisLink', { link = 'CurSearch', default = true })
 end
 M.highlights()
 vim.api.nvim_create_autocmd('ColorScheme', { group = vim.api.nvim_create_augroup('synopsis.answer', { clear = true }), callback = M.highlights })
@@ -168,6 +173,8 @@ local function forget_markview(buf)
   if mv and mv.strict_render then pcall(mv.strict_render.clear, mv.strict_render, buf) end
 end
 
+local draw_link -- defined below: highlight the selected link
+
 local function render(s)
   if not (is_open(s) and vim.api.nvim_buf_is_valid(s.buf)) then return end
   local items = vim.list_extend(vim.deepcopy(s.items), s.tail)
@@ -180,13 +187,14 @@ local function render(s)
     vim.api.nvim_buf_set_extmark(s.buf, ns, m.row, 0, { end_col = m.len, hl_group = m.hl, priority = 150 })
   end
   markdown_render(s, s.buf)
-  if vim.api.nvim_get_current_win() ~= s.win then pcall(vim.api.nvim_win_set_cursor, s.win, { #lines, 0 }) end
+  pcall(vim.api.nvim_win_set_cursor, s.win, { #lines, 0 })
+  draw_link(s)
   vim.api.nvim_exec_autocmds('User', { pattern = 'SynopsisAnswerRendered', data = { buf = s.buf, win = s.win } })
 end
 
 local function set_title(s)
   if not (s.input_win and vim.api.nvim_win_is_valid(s.input_win)) then return end
-  local title = s.pending and ' waiting for the answer… ' or ' Ask · Enter sends · Ctrl-k to the chat '
+  local title = s.pending and ' waiting for the answer… ' or ' Ask · Enter sends · Tab picks a link '
   vim.api.nvim_win_set_config(s.input_win, { title = title, title_pos = 'left' })
 end
 
@@ -333,48 +341,48 @@ local function buffer_citations(s)
   return out
 end
 
----Move the conversation's cursor to the next (dir = 1) or previous (dir = -1) citation, wrapping
----around, and preview it.
-local function step_citation(s, dir)
-  local cites = buffer_citations(s)
-  if #cites == 0 then return end
-  local row, col = unpack(vim.api.nvim_win_get_cursor(s.win))
-  local pick
-  if dir > 0 then
-    for _, c in ipairs(cites) do
-      if c.row > row or (c.row == row and c.s - 1 > col) then pick = c break end
-    end
-    pick = pick or cites[1]
-  else
-    for i = #cites, 1, -1 do
-      local c = cites[i]
-      if c.row < row or (c.row == row and c.s - 1 < col) then pick = c break end
-    end
-    pick = pick or cites[#cites]
-  end
-  vim.api.nvim_win_set_cursor(s.win, { pick.row, pick.s - 1 })
-  M.preview(pick.path, pick.line, pick.last)
+-- The selected link. The conversation never keeps the focus: s.link is the index of the selected
+-- citation in it, highlighted, kept in view, and shown in the preview.
+
+draw_link = function(s)
+  vim.api.nvim_buf_clear_namespace(s.buf, ns_link, 0, -1)
+  local c = s.link and buffer_citations(s)[s.link]
+  if not c then return end
+  vim.api.nvim_buf_set_extmark(s.buf, ns_link, c.row - 1, c.s - 1, { end_col = c.e, hl_group = 'SynopsisLink', priority = 200 })
+  return c
 end
 
----Preview the citation under the conversation's cursor, if there is one.
-local function preview_at_cursor(s)
-  if not is_open(s) then return end
-  local row, col = unpack(vim.api.nvim_win_get_cursor(s.win))
-  local line = vim.api.nvim_buf_get_lines(s.buf, row - 1, row, false)[1] or ''
-  for _, c in ipairs(find_all(line, s.root)) do
-    if col + 1 >= c.s and col + 1 <= c.e then
-      if s.preview_path ~= c.path or s.preview_first ~= c.line then M.preview(c.path, c.line, c.last) end
-      return
-    end
+---Select citation i (wrapping around), keep it in view, and preview it.
+local function select_link(s, i)
+  local cites = buffer_citations(s)
+  if #cites == 0 then return end
+  s.link = (i - 1) % #cites + 1
+  local c = draw_link(s)
+  pcall(vim.api.nvim_win_set_cursor, s.win, { c.row, c.s - 1 })
+  M.preview(c.path, c.line, c.last)
+end
+
+local function step_link(s, dir)
+  if not s.link then return select_link(s, dir > 0 and 1 or 0) end
+  select_link(s, s.link + dir)
+end
+
+---Select the citation at (row, col) of the conversation (1-based row, 0-based col), if any.
+local function link_at(s, row, col)
+  for i, c in ipairs(buffer_citations(s)) do
+    if c.row == row and col + 1 >= c.s and col + 1 <= c.e then return select_link(s, i) end
   end
 end
 
 -- Questions and answers.
 
+local layout_rows -- defined below: how many lines the conversation's items take
+
 local function on_done(s)
   return function(r)
     s.pending = false
     s.tail = {}
+    local start_row = layout_rows(s.items) + 1
     if r.cancelled then
       table.insert(s.items, { kind = 'meta', text = 'Cancelled.' })
     elseif r.error then
@@ -392,8 +400,15 @@ local function on_done(s)
     render(s)
     set_title(s)
     if is_open(s) and r.answer then
-      local first = M.citations(r.answer, s.root)[1]
-      if first then M.preview(first.path, first.line, first.last) end
+      -- Show the answer from its start, and select its first link.
+      pcall(vim.api.nvim_win_set_cursor, s.win, { start_row, 0 })
+      vim.api.nvim_win_call(s.win, function() vim.cmd 'normal! zt' end)
+      for i, c in ipairs(buffer_citations(s)) do
+        if c.row >= start_row then
+          select_link(s, i)
+          break
+        end
+      end
     end
   end
 end
@@ -518,19 +533,13 @@ jump = function(s, path, line)
   vim.cmd 'normal! zz'
 end
 
----Open the citation under the cursor in the conversation (or the first one on its line).
-function M.open_citation()
+---Open the selected link.
+function M.open_link()
   local s = M.current
   if not is_open(s) then return end
-  local row, col = unpack(vim.api.nvim_win_get_cursor(s.win))
-  local line = vim.api.nvim_buf_get_lines(s.buf, row - 1, row, false)[1] or ''
-  local found = find_all(line, s.root)
-  if #found == 0 then return vim.notify('synopsis: no path:line citation on this line', vim.log.levels.INFO) end
-  local pick = found[1]
-  for _, c in ipairs(found) do
-    if col + 1 >= c.s and col + 1 <= c.e then pick = c end
-  end
-  jump(s, pick.path, pick.line)
+  local c = s.link and buffer_citations(s)[s.link]
+  if not c then return vim.notify('synopsis: no link selected (Tab selects one)', vim.log.levels.INFO) end
+  jump(s, c.path, c.line)
 end
 
 ---A Telescope picker of every citation in the conversation.
@@ -562,17 +571,12 @@ end
 
 -- Windows.
 
+---<CR> in the input: send the question, or with nothing typed, open the selected link.
 local function send_input(s)
   if not vim.api.nvim_buf_is_valid(s.input_buf) then return end
   local text = table.concat(vim.api.nvim_buf_get_lines(s.input_buf, 0, -1, false), '\n')
-  if vim.trim(text) == '' then return end
+  if vim.trim(text) == '' then return M.open_link() end
   if M.send(text) then vim.api.nvim_buf_set_lines(s.input_buf, 0, -1, false, { '' }) end
-end
-
-local function scroll(s, dir)
-  if not vim.api.nvim_win_is_valid(s.win) then return end
-  local n = math.max(1, math.floor(vim.api.nvim_win_get_height(s.win) / 2))
-  vim.api.nvim_win_call(s.win, function() vim.cmd('normal! ' .. n .. vim.keycode(dir > 0 and '<C-e>' or '<C-y>')) end)
 end
 
 local function to_input(s)
@@ -593,6 +597,8 @@ function M.new_chat()
   M.sessions[s.root] = nil
   start(o)
 end
+
+layout_rows = function(items) return #(layout(items)) end
 
 ---Window positions: the conversation and input on the left, the preview on the right when the
 ---screen is wide enough.
@@ -675,35 +681,36 @@ local function open_windows(s)
       vim.keymap.set(modes, k, fn, { buffer = buf, nowait = true, desc = 'synopsis: ' .. desc })
     end
   end
-  -- The conversation.
-  map_keys(s.buf, 'n', km.close, M.close, 'close the chat')
-  map_keys(s.buf, 'n', km.open, M.open_citation, 'open the cited location')
-  map_keys(s.buf, 'n', km.locations, M.locations, 'list the cited locations')
-  map_keys(s.buf, 'n', km.input, function() to_input(s) end, 'type a question')
-  map_keys(s.buf, 'n', km.next_citation, function() step_citation(s, 1) end, 'preview the next citation')
-  map_keys(s.buf, 'n', km.prev_citation, function() step_citation(s, -1) end, 'preview the previous citation')
-  map_keys(s.buf, 'n', km.new_chat, M.new_chat, 'start a new chat')
-  vim.api.nvim_create_autocmd('CursorMoved', { buffer = s.buf, callback = function() preview_at_cursor(s) end })
-  -- The input panel. No completion menu there (blink.cmp and others honour this).
+  -- Every key is in the input panel, where the typing cursor stays. The conversation never keeps
+  -- the focus: entering it (with the mouse) selects the link there and goes back to the input.
+  vim.api.nvim_create_autocmd('WinEnter', {
+    buffer = s.buf,
+    callback = function()
+      vim.schedule(function()
+        if not (is_open(s) and vim.api.nvim_get_current_win() == s.win) then return end
+        local row, col = unpack(vim.api.nvim_win_get_cursor(s.win))
+        link_at(s, row, col)
+        to_input(s)
+      end)
+    end,
+  })
+  -- No completion menu in the input (blink.cmp and others honour this).
   vim.b[s.input_buf].completion = false
   local function input_keys()
-    map_keys(s.input_buf, { 'i', 'n' }, '<CR>', function() send_input(s) end, 'send the question')
-    map_keys(s.input_buf, { 'i', 'n' }, km.chat, function()
-      vim.cmd 'stopinsert'
-      if vim.api.nvim_win_is_valid(s.win) then vim.api.nvim_set_current_win(s.win) end
-    end, 'go to the chat')
-    map_keys(s.input_buf, { 'i', 'n' }, km.scroll_down, function() scroll(s, 1) end, 'scroll the chat down')
-    map_keys(s.input_buf, { 'i', 'n' }, km.scroll_up, function() scroll(s, -1) end, 'scroll the chat up')
+    map_keys(s.input_buf, { 'i', 'n' }, km.open or '<CR>', function() send_input(s) end, 'send the question, or open the selected link')
+    map_keys(s.input_buf, { 'i', 'n' }, km.next_citation, function() step_link(s, 1) end, 'select the next link')
+    map_keys(s.input_buf, { 'i', 'n' }, km.prev_citation, function() step_link(s, -1) end, 'select the previous link')
     map_keys(s.input_buf, { 'i', 'n' }, km.new_chat, M.new_chat, 'start a new chat')
     map_keys(s.input_buf, { 'i', 'n' }, '<C-c>', M.close, 'close the chat')
     if s.dock then map_keys(s.input_buf, { 'i', 'n' }, km.picker, function() to_prompt(s) end, 'go to the picker') end
   end
   input_keys()
-  map_keys(s.input_buf, 'n', 'q', M.close, 'close the chat')
-  if s.dock then map_keys(s.buf, 'n', km.picker, function() to_prompt(s) end, 'go to the picker') end
-  -- Other plugins map keys in each buffer on InsertEnter (llama.vim maps <C-g>, blink.cmp <C-n>
-  -- and <C-e>); map ours again after them.
-  vim.api.nvim_create_autocmd('InsertEnter', {
+  map_keys(s.input_buf, 'n', km.close, M.close, 'close the chat')
+  map_keys(s.input_buf, 'n', km.locations, M.locations, 'list the cited locations')
+  -- Other plugins map keys in each buffer on InsertEnter (llama.vim its trigger, blink.cmp <C-n>
+  -- and <Tab>), and llama.vim unmaps <Tab> and <S-Tab> on every cursor move in Insert mode; map
+  -- ours again after them.
+  vim.api.nvim_create_autocmd({ 'InsertEnter', 'CursorMovedI', 'InsertLeave' }, {
     buffer = s.input_buf,
     callback = function() vim.schedule(function() if vim.api.nvim_buf_is_valid(s.input_buf) then input_keys() end end) end,
   })
@@ -748,16 +755,14 @@ local function open_windows(s)
   end
 end
 
----Move the focus to the chat window at pos (a getmousepos() table): the conversation, with the
----cursor at the clicked cell, or the input panel, in Insert mode. False for any other window.
+---A click at pos (a getmousepos() table) on the chat: on the conversation, select the link there
+---if there is one; either way, type in the input. False for any other window.
 function M.click(pos)
   local s = M.current
   if not (is_open(s) and pos) then return false end
   if pos.winid == s.win then
-    vim.api.nvim_set_current_win(s.win)
-    vim.cmd 'stopinsert'
-    local n = vim.api.nvim_buf_line_count(s.buf)
-    pcall(vim.api.nvim_win_set_cursor, s.win, { math.max(1, math.min(pos.line, n)), math.max(0, (pos.column or 1) - 1) })
+    link_at(s, pos.line, math.max(0, (pos.column or 1) - 1))
+    to_input(s)
     return true
   elseif pos.winid == s.input_win then
     to_input(s)
