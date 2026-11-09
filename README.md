@@ -143,7 +143,7 @@ paired over the same files or questions. Details are in `eval/*/RESULTS.md`.
 
 Early. Both features work with Telescope's file and grep pickers and any OpenAI-compatible chat
 endpoint. Tested on macOS with Neovim 0.12.4 and Telescope commit `9377230`. GitHub Actions runs
-the 194 automated tests on Linux. The tests call the chat's mouse handler directly, since
+the 196 automated tests on Linux. The tests call the chat's mouse handler directly, since
 headless Neovim receives no real clicks.
 
 ## Future directions
@@ -331,7 +331,7 @@ The colours come from these highlight groups, which follow your colour scheme by
 | `SynopsisQuestion` | Questions in the chat | `Function`'s colour, bold |
 | `SynopsisProgress`, `SynopsisMeta`, `SynopsisHint` | The chat's progress lines, footers and hint | `Comment` |
 | `SynopsisCited` | The cited lines in the preview | `Visual` |
-| `SynopsisLink` | The selected link in the chat | `CurSearch` |
+| `SynopsisLink` | The selected link in the chat | `IncSearch` |
 
 After each change to the chat, synopsis fires `User SynopsisAnswerRendered` with `{ buf, win }`,
 for other markdown renderers; set `ask.render = false` to turn off the built-in rendering.

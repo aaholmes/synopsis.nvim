@@ -120,6 +120,19 @@ H.check('Ctrl-Space in the chat goes back to the prompt, and from the prompt bac
   H.eq(cur().win, win, 'same chat window')
 end)
 
+H.check('going back to the chat on the same file leaves the conversation as it was drawn', function()
+  -- Redrawing it clears markview's and snacks' rendering, so LaTeX flashes as source.
+  local tick = vim.b[cur().buf].changedtick
+  local renders = 0
+  local id = vim.api.nvim_create_autocmd('User', { pattern = 'SynopsisAnswerRendered', callback = function() renders = renders + 1 end })
+  press(cur().input_buf, 'i', '<C-Space>')
+  vim.wait(50)
+  ctrl_space()
+  vim.api.nvim_del_autocmd(id)
+  H.eq(vim.b[cur().buf].changedtick, tick, 'conversation not rewritten')
+  H.eq(renders, 0, 'not rendered again')
+end)
+
 local function preview_cited()
   local p = picker()
   local buf = vim.api.nvim_win_get_buf(p.preview_win)
@@ -196,6 +209,8 @@ H.check('closing the picker closes the chat', function()
   actions.close(prompt_buf())
   vim.wait(500, function() return cur().closed end, 10)
   H.eq(cur().closed, true, 'chat closed')
+  H.eq(vim.api.nvim_win_is_valid(cur().win), false, 'conversation window closed')
+  H.eq(vim.api.nvim_win_is_valid(cur().input_win), false, 'input window closed')
   vim.wait(300)
   H.eq(prompt_buf(), nil, 'picker not reopened')
 end)

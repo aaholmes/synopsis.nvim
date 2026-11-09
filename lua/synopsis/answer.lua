@@ -34,7 +34,7 @@ end
 
 ---Default colours, from the colour scheme: questions in Function's colour, bold; progress, footer
 ---and hints muted (Comment); cited lines in the preview like a selection (Visual); the selected
----link like the current search match (CurSearch). Defined with default = true, so a colour
+---link like the match under the cursor while searching (IncSearch). Defined with default = true, so a colour
 ---scheme or user wins.
 function M.highlights()
   local fn = vim.api.nvim_get_hl(0, { name = 'Function', link = false })
@@ -43,7 +43,7 @@ function M.highlights()
     vim.api.nvim_set_hl(0, g, { link = 'Comment', default = true })
   end
   vim.api.nvim_set_hl(0, 'SynopsisCited', { link = 'Visual', default = true })
-  vim.api.nvim_set_hl(0, 'SynopsisLink', { link = 'CurSearch', default = true })
+  vim.api.nvim_set_hl(0, 'SynopsisLink', { link = 'IncSearch', default = true })
 end
 M.highlights()
 vim.api.nvim_create_autocmd('ColorScheme', { group = vim.api.nvim_create_augroup('synopsis.answer', { clear = true }), callback = M.highlights })
@@ -502,8 +502,8 @@ function M.close(opts)
     if vim.api.nvim_buf_is_valid(b) then pcall(vim.api.nvim_buf_delete, b, { force = true }) end
   end
   s.preview_bufs = {}
-  for _, w in ipairs { s.preview_win, s.input_win, s.win } do
-    if w and vim.api.nvim_win_is_valid(w) then pcall(vim.api.nvim_win_close, w, true) end
+  for _, w in pairs { s.preview_win, s.input_win, s.win } do -- pairs: preview_win is nil when docked
+    if vim.api.nvim_win_is_valid(w) then pcall(vim.api.nvim_win_close, w, true) end
   end
   if s.preview_msg_buf and vim.api.nvim_buf_is_valid(s.preview_msg_buf) then pcall(vim.api.nvim_buf_delete, s.preview_msg_buf, { force = true }) end
   s.preview_win, s.preview_buf, s.preview_path, s.preview_msg_buf = nil, nil, nil, nil
@@ -787,19 +787,21 @@ function M.relayout()
 end
 
 ---Note a change of file in the conversation, and tell the model with the next question.
+---Note that the user now views `about`, if it is another file. Returns true if it noted one.
 local function note_about(s, about)
-  if not about or (s.about and s.about.path == about.path) then return end
+  if not about or (s.about and s.about.path == about.path) then return false end
   if #s.items > 0 then table.insert(s.items, { kind = 'blank' }) end
   table.insert(s.items, { kind = 'note', text = string.format('Now viewing `%s`', about.path) })
   s.about, s.tell_about = about, about
+  return true
 end
 
 ---Move to the open chat's input panel, noting `about` if it is another file.
 function M.focus(about)
   local s = M.current
   if not is_open(s) then return end
-  note_about(s, about)
-  render(s)
+  -- Redrawing clears markview's and snacks' rendering, which would flash the raw LaTeX.
+  if note_about(s, about) then render(s) end
   to_input(s)
 end
 

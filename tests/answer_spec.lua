@@ -486,6 +486,12 @@ local function selected_link()
   end
 end
 
+H.check('the selected link stands out: SynopsisLink links to IncSearch by default', function()
+  vim.cmd 'highlight clear SynopsisLink'
+  answer.highlights()
+  H.eq(vim.api.nvim_get_hl(0, { name = 'SynopsisLink' }).link, 'IncSearch', 'default link')
+end)
+
 H.check('<Tab> and <S-Tab> in the input move the selected link, wrapping, and the preview follows', function()
   reset()
   local server = mock.start 'See a.lua:2-3 and b.lua:1.'
