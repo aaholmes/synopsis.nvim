@@ -21,7 +21,7 @@ end)
 H.check('a Python file: the module docstring, then classes and functions, not methods', function()
   H.eq(M.entry(repo, 'pkg/c.py'), 'pkg/c.py: Boxes for things. More detail here. Defines: Box, make', 'entry')
 end)
-if pcall(vim.treesitter.language.add, 'rust') then
+if H.has_parser 'rust' then
   H.check('a Rust file: //! comments, then items, with impl blocks named by their header', function()
     H.eq(M.entry(repo, 'lib.rs'), 'lib.rs: Core types. Defines: Det, impl Det, run', 'entry')
   end)

@@ -23,14 +23,19 @@ jobs:
       # The chat's search tool runs ripgrep, which the runner image does not include.
       - name: Install ripgrep
         run: sudo apt-get update -q && sudo apt-get install -y -q ripgrep
-      # Python's Tree-sitter parser (v0.25.0), for the tests of highlighting cited Python code.
-      - name: Build the Python parser
+      # Tree-sitter parsers for Python (v0.25.0) and Rust (v0.24.2), which Neovim does not bundle:
+      # the tests of the repo map, outlines and cited-code highlighting use them.
+      - name: Build Tree-sitter parsers
         run: |
-          git clone --quiet https://github.com/tree-sitter/tree-sitter-python deps/tree-sitter-python
-          git -C deps/tree-sitter-python checkout --quiet 293fdc02038ee2bf0e2e206711b69c90ac0d413f
           mkdir -p deps/site/parser
-          cc -shared -fPIC -O2 -I deps/tree-sitter-python/src deps/tree-sitter-python/src/parser.c \
-            deps/tree-sitter-python/src/scanner.c -o deps/site/parser/python.so
+          build() {
+            git clone --quiet "https://github.com/tree-sitter/tree-sitter-$1" "deps/tree-sitter-$1"
+            git -C "deps/tree-sitter-$1" checkout --quiet "$2"
+            cc -shared -fPIC -O2 -I "deps/tree-sitter-$1/src" "deps/tree-sitter-$1/src/parser.c" \
+              "deps/tree-sitter-$1/src/scanner.c" -o "deps/site/parser/$1.so"
+          }
+          build python 293fdc02038ee2bf0e2e206711b69c90ac0d413f
+          build rust 77a3747266f4d621d0757825e6b11edcbf991ca5
       - name: Run tests
         run: |
           git config --global user.email ci@example.com

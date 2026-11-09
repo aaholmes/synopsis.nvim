@@ -17,6 +17,13 @@ function H.eq(got, want, what)
   if got ~= want then error(string.format('%s: got %s, want %s', what or 'value', vim.inspect(got), vim.inspect(want)), 2) end
 end
 
+---Whether Tree-sitter has a parser for lang. language.add returns nil for a missing one instead
+---of raising an error, so pcall alone would say yes.
+function H.has_parser(lang)
+  local ok, found = pcall(vim.treesitter.language.add, lang)
+  return ok and found == true
+end
+
 function H.finish()
   io.write(string.format('\n%d passed, %d failed\n', H.passes, H.failures))
   vim.cmd(H.failures == 0 and 'qa!' or 'cq!')

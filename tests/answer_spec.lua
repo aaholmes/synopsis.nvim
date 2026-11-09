@@ -559,7 +559,7 @@ end)
 
 H.check('in Python: a def or for line highlights its block; a loss line inside a loop only itself', function()
   reset()
-  H.eq(pcall(vim.treesitter.language.add, 'python'), true, "Python's Tree-sitter parser is installed")
+  H.eq(H.has_parser 'python', true, "Python's Tree-sitter parser is installed")
   vim.fn.writefile({
     'import torch.nn.functional as F',
     '',

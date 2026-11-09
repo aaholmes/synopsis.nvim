@@ -62,7 +62,7 @@ H.check('outline lists a Lua file\'s functions with line numbers', function()
   local out = T.call(repo, 'outline', '{"path":"a.lua"}')
   H.eq(out, '3: function M.greet(name)\n7: local function helper()\n9: M.wave = function()', 'out')
 end)
-if pcall(vim.treesitter.language.add, 'python') then
+if H.has_parser 'python' then
   H.check('outline nests Python methods under their class', function()
     local out = T.call(repo, 'outline', '{"path":"pkg/c.py"}')
     H.eq(out, '1: class Box:\n2:   def open(self):\n6: def make():', 'out')
