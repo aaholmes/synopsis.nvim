@@ -20,6 +20,14 @@ jobs:
           git -C deps/telescope.nvim checkout --quiet 9377230aa5305d9e9aca4ed8dadf1070fb4aa9fc
           git clone --quiet https://github.com/nvim-lua/plenary.nvim deps/plenary.nvim
           git -C deps/plenary.nvim checkout --quiet 74b06c6c75e4eeb3108ec01852001636d85a932b
+      # Python's Tree-sitter parser (v0.25.0), for the tests of highlighting cited Python code.
+      - name: Build the Python parser
+        run: |
+          git clone --quiet https://github.com/tree-sitter/tree-sitter-python deps/tree-sitter-python
+          git -C deps/tree-sitter-python checkout --quiet 293fdc02038ee2bf0e2e206711b69c90ac0d413f
+          mkdir -p deps/site/parser
+          cc -shared -fPIC -O2 -I deps/tree-sitter-python/src deps/tree-sitter-python/src/parser.c \
+            deps/tree-sitter-python/src/scanner.c -o deps/site/parser/python.so
       - name: Run tests
         run: |
           git config --global user.email ci@example.com

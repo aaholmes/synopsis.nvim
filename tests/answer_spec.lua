@@ -507,6 +507,94 @@ H.check("the chat's title names the project, not the file it was opened on", fun
   reset()
 end)
 
+H.check('a single-line citation highlights the code block that starts on that line, up to 50 lines', function()
+  reset()
+  local long = { 'local M = {}', 'function M.long()' }
+  for i = 1, 60 do long[#long + 1] = '  local x' .. i .. ' = ' .. i end
+  vim.list_extend(long, { 'end', 'return M' })
+  vim.fn.writefile({ 'local M = {}', 'function M.f(a)', '  local b = a + 1', '  return b', 'end', 'return M' }, repo .. '/f.lua')
+  vim.fn.writefile(long, repo .. '/g.lua')
+  local server = mock.start 'ok'
+  answer.open { root = repo, question = 'Q?', config = config(server) }
+  vim.wait(3000, idle, 10)
+  answer.preview('f.lua', 2)
+  H.eq(cited_rows(), '1,2,3,4', 'the whole function from its first line')
+  answer.preview('f.lua', 3)
+  H.eq(cited_rows(), '2', 'a one-line statement inside it: just that line')
+  answer.preview('f.lua', 2, 3)
+  H.eq(cited_rows(), '1,2', 'a range as cited')
+  answer.preview('g.lua', 2)
+  H.eq(cited_rows(), '1', 'a block longer than 50 lines: just the line')
+  answer.preview('b.lua', 1)
+  H.eq(cited_rows(), '0', 'not widened to the whole file')
+  answer.preview('.gitignore', 1) -- no parser for it
+  reset()
+  vim.fn.delete(repo .. '/f.lua')
+  vim.fn.delete(repo .. '/g.lua')
+end)
+
+H.check("a cited line inside a long function stands for itself, or for its statement across lines", function()
+  reset()
+  vim.fn.writefile({
+    'function train(model, data)',
+    '  local loss = cross_entropy(model(data.x), data.y)', -- the first statement of the body
+    '  local opt = adam(',
+    '    model.params, 0.001',
+    '  )',
+    '  opt:step(loss)',
+    'end',
+  }, repo .. '/train.lua')
+  local server = mock.start 'ok'
+  answer.open { root = repo, question = 'Q?', config = config(server) }
+  vim.wait(3000, idle, 10)
+  answer.preview('train.lua', 2)
+  H.eq(cited_rows(), '1', 'the loss line only, not the rest of the function')
+  answer.preview('train.lua', 3)
+  H.eq(cited_rows(), '2,3,4', 'a statement over three lines')
+  answer.preview('train.lua', 1)
+  H.eq(cited_rows(), '0,1,2,3,4,5,6', 'the function from its first line')
+  reset()
+  vim.fn.delete(repo .. '/train.lua')
+end)
+
+H.check('in Python: a def or for line highlights its block; a loss line inside a loop only itself', function()
+  reset()
+  H.eq(pcall(vim.treesitter.language.add, 'python'), true, "Python's Tree-sitter parser is installed")
+  vim.fn.writefile({
+    'import torch.nn.functional as F',
+    '',
+    '',
+    '@torch.no_grad()',
+    'def evaluate(model, data):',
+    '    return model(data).mean()',
+    '',
+    '',
+    'def train(model, data, opt):',
+    '    for x, y in data:',
+    '        logits = model(x)',
+    '        loss = F.cross_entropy(logits, y)',
+    '        loss.backward()',
+    '        opt.step()',
+    '    return loss',
+  }, repo .. '/train.py')
+  local server = mock.start 'ok'
+  answer.open { root = repo, question = 'Q?', config = config(server) }
+  vim.wait(3000, idle, 10)
+  local function rows(line)
+    answer.preview('train.py', line)
+    local r = vim.split(cited_rows(), ',')
+    return (tonumber(r[1]) + 1) .. '-' .. (tonumber(r[#r]) + 1)
+  end
+  H.eq(rows(9), '9-15', 'def train: the function')
+  H.eq(rows(10), '10-14', 'for: the loop')
+  H.eq(rows(11), '11-11', "the loop's first statement only")
+  H.eq(rows(12), '12-12', 'the loss line only')
+  H.eq(rows(4), '4-4', 'a decorator line only')
+  H.eq(rows(5), '5-6', 'def evaluate: the function')
+  reset()
+  vim.fn.delete(repo .. '/train.py')
+end)
+
 ---The text the conversation highlights as the selected link.
 local function selected_link()
   local ns = vim.api.nvim_get_namespaces()['synopsis.link']

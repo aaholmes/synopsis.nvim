@@ -60,7 +60,7 @@ Ctrl-Space in Telescope, or :SynopsisAsk
 | `map.lua` | The repo map for questions: each file's leading comment (or docstring) and the names it defines, read with Tree-sitter, Neovim's built-in parser. It is built in small chunks and cached by file. |
 | `tools.lua` | The tools the model may call: `rg` (search with ripgrep), `read` (a range of lines), `outline` (a file's definitions with line numbers). They obey the same exclude and size rules. |
 | `ask.lua` | The question loop: up to 10 rounds of tool calls, then a final answer. It never blocks the editor. A conversation holds the messages across questions; cancelling a question restores them to how they were before it, so the conversation can go on. |
-| `answer.lua` | The chat: one conversation per repo, kept while Neovim runs; an input panel that holds every key, and a link cursor that moves through the citations; a preview, which is Telescope's own when the chat is beside a picker; progress lines; a Telescope list of every cited location; and rendering with markview and snacks (LaTeX written as `\(…\)` or `\[…\]` is rewritten with dollar signs, which they recognise). |
+| `answer.lua` | The chat: one conversation per repo, kept while Neovim runs; an input panel that holds every key, and a link cursor that moves through the citations; a preview, which is Telescope's own when the chat is beside a picker, with each cited line widened to the code block that starts on it; progress lines; a Telescope list of every cited location; and rendering with markview and snacks (LaTeX written as `\(…\)` or `\[…\]` is rewritten with dollar signs, which they recognise). |
 
 **Tech stack:**
 - The plugin is Lua on Neovim 0.12 (`vim.system`, `vim.uv` timers, floating windows,
@@ -139,18 +139,24 @@ paired over the same files or questions. Details are in `eval/*/RESULTS.md`.
   results clears the prompt so that it can be selected, which means the results then list
   every file rather than the last search. Telescope previews a file whenever its selection
   changes, so synopsis moves the selection with that preview switched off.
-- **One conversation per project, not per file.** Questions asked while browsing usually build
-  on each other, so Ctrl-Space on a second file continues the chat, and the model is told the
-  new file once. The chat is titled with the project's name. Beside a picker, Ctrl-Space on any
-  file goes back to that picker's chat, even a file with another root, such as one in a nested
-  repo. A cancelled question is removed from the messages, because the API rejects a
-  conversation that ends in an unanswered tool call.
+- **A cited line is widened to its code block, by the parser rather than the model.** The model
+  cites single lines (`path:line`), as the evaluated prompt asks. The preview highlights the
+  largest syntax node, found with Tree-sitter, that starts on that line and is at most 50 lines
+  long: citing a `def` line highlights the function, and citing a `for` line the loop. A line
+  inside a block stands for itself (a one-line `loss = …` inside a training loop highlights only
+  that line). Ranges the model writes (`path:first-last`) are highlighted as written.
+- **One conversation per repo, not per file.** Questions asked while browsing usually build on
+  each other, so Ctrl-Space on a second file continues the chat, and the model is told the new
+  file once. The chat is titled with the repo's name. Beside a picker, Ctrl-Space on any file
+  goes back to that picker's chat, even a file with another root, such as one in a nested repo.
+  A cancelled question is removed from the messages, because the API rejects a conversation
+  that ends in an unanswered tool call.
 
 ## Current state
 
 Early. Both features work with Telescope's file and grep pickers and any OpenAI-compatible chat
 endpoint. Tested on macOS with Neovim 0.12.4 and Telescope commit `9377230`. GitHub Actions runs
-the 206 automated tests on Linux. The tests call the chat's mouse handler directly, since
+the 209 automated tests on Linux. The tests call the chat's mouse handler directly, since
 headless Neovim receives no real clicks.
 
 Known limitations:
@@ -236,7 +242,8 @@ The `:SynopsisAsk` chat has:
   ends with a muted line giving its tool calls, time and tokens. One link is selected and
   highlighted; each new answer selects its own first link.
 - **an input panel** below it, where the typing cursor stays. All the chat's keys work there.
-- **a preview** of the selected link, with the cited lines highlighted, three lines below the
+- **a preview** of the selected link, with the cited lines highlighted (a single cited line
+  together with the function, loop or statement that starts on it), three lines below the
   top. Files that are never sent (see `exclude`) are never shown.
 
 Opened from Telescope on a screen at least 180 columns wide, the chat takes a column to the
@@ -394,7 +401,9 @@ background file or the model changes.
 tests/run.sh
 ```
 
-The tests run headless and use a fake chat endpoint, so they need no network or API key.
+The tests run headless and use a fake chat endpoint, so they need no network or API key. The
+tests of highlighting cited Python code need Python's Tree-sitter parser; CI builds it from a
+pinned release of tree-sitter-python.
 
 ## License
 

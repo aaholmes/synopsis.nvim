@@ -2,6 +2,8 @@
 -- Dependencies are found with :packadd (e.g. installed by vim.pack), or under $SYNOPSIS_DEPS.
 local root = vim.fs.dirname(vim.fs.dirname(vim.fs.normalize(vim.fn.fnamemodify(debug.getinfo(1, 'S').source:sub(2), ':p'))))
 vim.opt.rtp:prepend(root)
+-- Tree-sitter parsers beyond Neovim's own (Python), built by CI under $SYNOPSIS_DEPS/site.
+if vim.env.SYNOPSIS_DEPS then vim.opt.rtp:prepend(vim.env.SYNOPSIS_DEPS .. '/site') end
 for _, dep in ipairs { 'plenary.nvim', 'telescope.nvim' } do
   if vim.env.SYNOPSIS_DEPS then
     vim.opt.rtp:prepend(vim.env.SYNOPSIS_DEPS .. '/' .. dep)

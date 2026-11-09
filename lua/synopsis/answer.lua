@@ -278,7 +278,44 @@ local function give_back_preview(s)
   s.preview_path, s.preview_first, s.preview_buf = nil, nil, nil
 end
 
----Show path in the preview with lines first..last highlighted (last defaults to first).
+local BLOCK_MAX = 50
+
+---The last line of what a single-line citation of `line` stands for: the largest syntax node
+---that starts on that line (a function, a loop, a statement), if at most BLOCK_MAX lines long;
+---else the line itself. A node holding statements on later lines (a function's body, which
+---starts with its first statement) is not one: a line inside a function stands for itself, not
+---for the rest of the function. Found with Tree-sitter, so it needs a parser for the language.
+local function block_end(buf, line)
+  local lang = vim.treesitter.language.get_lang(vim.bo[buf].filetype or '')
+  local ok, parser = pcall(vim.treesitter.get_parser, buf, lang)
+  if not (ok and parser) then return line end
+  local tree = parser:parse()[1]
+  if not tree then return line end
+  local root = tree:root()
+  local text = vim.api.nvim_buf_get_lines(buf, line - 1, line, false)[1] or ''
+  local col = (text:find '%S' or 1) - 1
+  local node = root:named_descendant_for_range(line - 1, col, line - 1, col)
+  local last = line
+  local prev
+  while node and node:id() ~= root:id() do
+    local sr, _, er, ec = node:range()
+    if sr ~= line - 1 then break end -- starts on an earlier line: it encloses the line instead
+    if prev then
+      local _, _, prev_er = prev:range()
+      for child in node:iter_children() do
+        if child:named() and child:start() > prev_er then return last end -- a list of statements
+      end
+    end
+    local e = (ec == 0 and er > sr) and er or er + 1 -- 1-based last line
+    if e - line + 1 > BLOCK_MAX then break end
+    last = math.max(last, e)
+    prev, node = node, node:parent()
+  end
+  return last
+end
+
+---Show path in the preview with lines first..last highlighted. Without last, the code block that
+---starts on line first is highlighted (see block_end).
 function M.preview(path, first, last)
   local s = M.current
   if not is_open(s) then return end
@@ -311,7 +348,7 @@ function M.preview(path, first, last)
   end
   local n = vim.api.nvim_buf_line_count(buf)
   first = math.max(1, math.min(first or 1, n))
-  last = math.max(first, math.min(last or first, n))
+  last = math.max(first, math.min(last or block_end(buf, first), n))
   vim.api.nvim_buf_clear_namespace(buf, ns_preview, 0, -1)
   for row = first - 1, last - 1 do
     vim.api.nvim_buf_set_extmark(buf, ns_preview, row, 0, { line_hl_group = 'SynopsisCited', priority = 150 })
