@@ -53,6 +53,18 @@ function M.register(height)
       local col = r2 - (l2 - left) + 2
       picker._synopsis_dock = { row = top, col = col, width = right - col + 1, height = bottom - top + 1 }
     end
+    -- One blank column between the preview and the results, as between the preview and the
+    -- chat: Telescope puts their borders side by side, which looks closer than stacked borders.
+    local pv = layout.preview
+    if pv and pv.width > 1 then
+      if pv.col > layout.results.col then
+        pv.col, pv.width = pv.col + 1, pv.width - 1
+      else
+        for _, k in ipairs { 'results', 'prompt' } do
+          if layout[k] then layout[k].col, layout[k].width = layout[k].col + 1, layout[k].width - 1 end
+        end
+      end
+    end
     local r = layout.results
     -- Telescope's positions are the text area; borders are drawn one cell outside it. The pane's
     -- border takes the results border's old top row, so the space freed is height + 2 rows.

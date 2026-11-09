@@ -85,6 +85,14 @@ local function ask(q)
   vim.wait(50)
 end
 
+H.check('the synopsis layout leaves one blank column between the results and the preview', function()
+  close_all()
+  open_picker()
+  local function text(w) local c = vim.api.nvim_win_get_config(w); return { col = c.col, w = c.width } end
+  local results, preview = text(picker().results_win), text(picker().preview_win)
+  H.eq((preview.col - 1) - (results.col + results.w) - 1, 1)
+end)
+
 H.check('Ctrl-Space on a wide screen keeps the picker open and opens the chat beside it', function()
   close_all()
   open_picker()
@@ -106,6 +114,13 @@ H.check('Ctrl-Space on a wide screen keeps the picker open and opens the chat be
   H.eq(input.col, chat.col, 'input under the conversation')
   H.eq(input.row >= chat.row + chat.h, true, 'input below the conversation')
   H.eq(chat.col + chat.w <= vim.o.columns, true, 'chat fits on the screen')
+  -- Text areas, 0-based; each border is one cell outside them.
+  local function text(w) local c = vim.api.nvim_win_get_config(w); return { col = c.col, w = c.width } end
+  local results, preview = text(picker().results_win), text(picker().preview_win)
+  local gap_left = (preview.col - 1) - (results.col + results.w) - 1
+  local gap_right = chat.col - (preview.col + preview.w) - 1
+  H.eq(gap_left, 1, 'one blank column between the results and the preview')
+  H.eq(gap_right, 1, 'one blank column between the preview and the chat')
 end)
 
 H.check('Ctrl-Space in the chat goes back to the prompt, and from the prompt back to the chat', function()
