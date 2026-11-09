@@ -687,6 +687,10 @@ local function to_input(s)
   if not vim.api.nvim_win_is_valid(s.input_win) then return end
   vim.api.nvim_set_current_win(s.input_win)
   vim.cmd 'startinsert!'
+  -- Leaving Telescope's prompt (a prompt buffer) ends Insert mode after this runs; start it again.
+  vim.schedule(function()
+    if vim.api.nvim_get_current_win() == s.input_win and vim.api.nvim_get_mode().mode:sub(1, 1) ~= 'i' then vim.cmd 'startinsert!' end
+  end)
 end
 
 local start
@@ -772,7 +776,7 @@ local function open_windows(s)
     relative = 'editor', width = g.width, height = g.input_h, row = g.row + g.height + 2, col = g.col, style = 'minimal',
     border = 'rounded', title = ' Ask ', title_pos = 'left',
   })
-  vim.wo[s.input_win].wrap = true
+  vim.wo[s.input_win].wrap, vim.wo[s.input_win].linebreak = true, true
   vim.wo[s.input_win].winhighlight = s.dock
     and 'Normal:TelescopePromptNormal,FloatBorder:TelescopePromptBorder,FloatTitle:TelescopePromptTitle' or ''
   if s.preview_win then vim.wo[s.preview_win].winhighlight = '' end

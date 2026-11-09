@@ -494,4 +494,47 @@ H.check('below side_min_columns, Ctrl-Space closes the picker and opens the chat
   close_all()
 end)
 
+H.check('typed Ctrl-Space from the prompt back to the chat lands in Insert mode, every time', function()
+  -- Leaving a prompt buffer such as Telescope's ends Insert mode, which only typed keys show:
+  -- drive a second Neovim through its RPC channel.
+  local ch = vim.fn.jobstart({ vim.v.progpath, '--embed', '--headless', '-u', 'tests/minimal_init.lua' },
+    { rpc = true, cwd = SYNOPSIS_ROOT })
+  local function lua(code, ...) return vim.rpcrequest(ch, 'nvim_exec_lua', code, { ... }) end
+  lua([[
+    vim.o.columns, vim.o.lines = 200, 50
+    local dir, url, rtp = ...
+    vim.o.runtimepath = rtp
+    vim.cmd.cd(dir)
+    require('telescope').setup {}
+    require('synopsis').setup { llm = { url = url, model = 'm', api_key_env = false, params = {} },
+      delay_ms = 600000, consent = 'always' }
+    require('telescope.builtin').find_files { layout_strategy = 'synopsis' }
+  ]], root, server.url, vim.o.runtimepath)
+  local function where()
+    return lua [[local s = require('synopsis.answer').current; local w = vim.api.nvim_get_current_win()
+      return { (s and w == s.input_win) and 'input' or vim.bo.filetype, vim.api.nvim_get_mode().mode }]]
+  end
+  local function typed(lhs, want)
+    vim.rpcrequest(ch, 'nvim_input', lhs)
+    vim.wait(2000, function() return where()[1] == want end, 20)
+    vim.wait(100)
+  end
+  vim.wait(2000, function() return where()[1] == 'TelescopePrompt' end, 20)
+  vim.wait(300)
+  for i = 1, 3 do
+    typed('<C-Space>', 'input')
+    H.eq(table.concat(where(), ' '), 'input i', 'round ' .. i)
+    typed('<C-Space>', 'TelescopePrompt')
+    H.eq(table.concat(where(), ' '), 'TelescopePrompt i', 'round ' .. i)
+  end
+  vim.fn.jobstop(ch)
+end)
+
+H.check("the input panel wraps at word boundaries", function()
+  close_all()
+  open_picker()
+  ctrl_space()
+  H.eq(vim.wo[cur().input_win].linebreak, true)
+end)
+
 H.finish()
