@@ -1,14 +1,14 @@
 # synopsis.nvim
 
-Get up to speed in an unfamiliar codebase without leaving
-[Telescope](https://github.com/nvim-telescope/telescope.nvim). synopsis adds two things to
-Telescope's file and grep pickers:
+An interactive tool for understanding a codebase. Agents may write a lot of code these days, but
+humans still need to understand it.
 
-- **A summary of the previewed file**, in a pane above the results: what the file does, what to
-  watch out for, and the files it works with. It is written by a language model the first time
-  you stop on a file, then cached.
-- **A chat about the repo**, beside the picker. The model searches and reads the code to answer,
-  and cites the lines it used. Tab through the citations and Telescope's preview shows each one.
+- **A summary of each file as you browse**: what it does, what to watch out for, and what it
+  works with.
+- **A chat about the repo**: answers that cite the lines they come from, shown in the preview as
+  you Tab through them.
+
+Both live in [Telescope](https://github.com/nvim-telescope/telescope.nvim)'s pickers.
 
 ![Browsing modded-nanogpt in Telescope: a cached summary appears immediately, then a new file's summary is written after a one-second pause on it](docs/demo.gif)
 
