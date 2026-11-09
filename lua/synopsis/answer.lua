@@ -755,7 +755,7 @@ local function open_windows(s)
   local km = s.config.ask.keymaps or {}
   s.origin = vim.api.nvim_get_current_win()
   local g = s.dock and dock_geometry(s.dock.picker._synopsis_dock) or geometry(s.config)
-  local title = ' ' .. vim.fs.basename(s.root) .. ' ' -- the chat is about the project
+  local title = ' Chat · ' .. vim.fs.basename(s.root) .. ' ' -- the chat is about the project
 
   s.buf = vim.api.nvim_create_buf(false, true)
   vim.bo[s.buf].bufhidden = 'wipe'

@@ -516,12 +516,12 @@ H.check('a citation is shown near the top of the preview, with three lines above
   vim.fn.delete(repo .. '/long.txt')
 end)
 
-H.check("the chat's title names the project, not the file it was opened on", function()
+H.check("the chat is titled Chat, with the project it is about, not the file it was opened on", function()
   reset()
   local server = mock.start 'ok'
   answer.open { root = repo, config = config(server), about = { path = 'a.lua' } }
   local title = vim.api.nvim_win_get_config(cur().win).title
-  H.eq(vim.trim(title[1][1]), vim.fs.basename(repo), 'title')
+  H.eq(vim.trim(title[1][1]), "Chat · " .. vim.fs.basename(repo), "title")
   reset()
 end)
 
