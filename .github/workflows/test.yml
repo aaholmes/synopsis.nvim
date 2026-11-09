@@ -20,6 +20,9 @@ jobs:
           git -C deps/telescope.nvim checkout --quiet 9377230aa5305d9e9aca4ed8dadf1070fb4aa9fc
           git clone --quiet https://github.com/nvim-lua/plenary.nvim deps/plenary.nvim
           git -C deps/plenary.nvim checkout --quiet 74b06c6c75e4eeb3108ec01852001636d85a932b
+      # The chat's search tool runs ripgrep, which the runner image does not include.
+      - name: Install ripgrep
+        run: sudo apt-get update -q && sudo apt-get install -y -q ripgrep
       # Python's Tree-sitter parser (v0.25.0), for the tests of highlighting cited Python code.
       - name: Build the Python parser
         run: |

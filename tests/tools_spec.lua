@@ -103,4 +103,17 @@ H.check('call_async gives the same text as call', function()
   end
 end)
 
+H.check('without rg installed, the rg tool says so instead of failing', function()
+  local path = vim.env.PATH
+  vim.env.PATH = vim.fn.tempname() -- a directory with no rg in it
+  local got
+  local ok, err = pcall(T.call_async, repo, 'rg', '{"pattern":"greet"}', opts, function(out) got = out end)
+  local sync = T.call(repo, 'rg', '{"pattern":"greet"}', opts)
+  vim.env.PATH = path
+  H.eq(ok, true, 'call_async does not throw: ' .. tostring(err))
+  vim.wait(1000, function() return got ~= nil end, 10)
+  H.eq(got, 'error: rg (ripgrep) is not installed', 'call_async')
+  H.eq(sync, 'error: rg (ripgrep) is not installed', 'call')
+end)
+
 H.finish()

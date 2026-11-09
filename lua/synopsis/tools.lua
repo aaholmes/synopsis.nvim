@@ -55,6 +55,7 @@ local function cap(list, what)
 end
 
 local function rg_cmd(a, opts)
+  if vim.fn.executable 'rg' ~= 1 then error('rg (ripgrep) is not installed', 0) end
   if type(a.pattern) ~= 'string' or a.pattern == '' then error 'pattern is required' end
   local cmd = { 'rg', '--line-number', '--no-heading', '--color', 'never', '--smart-case', '--sort', 'path',
     '--max-columns', '200', '--max-columns-preview' }
