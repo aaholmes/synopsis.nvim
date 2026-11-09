@@ -5,6 +5,9 @@
 -- and reopening the chat continues it. Each question runs the question loop (ask.lua) with the
 -- repo's file map; tool calls show as muted progress lines until the answer replaces them.
 -- Closing any window closes all of them and cancels a question still being answered.
+-- Opened with o.dock = { prompt, picker } (from Telescope, on a wide screen), the chat instead
+-- sits in a column beside the picker, which stays open: the cited lines are shown in Telescope's
+-- preview, the picker key moves between the two, and moving to an ordinary window closes both.
 local consent = require 'synopsis.consent'
 local files = require 'synopsis.files'
 local map = require 'synopsis.map'
@@ -235,28 +238,66 @@ local function preview_buffer(s, path, text)
   return buf
 end
 
----Show path in the preview pane with lines first..last highlighted (last defaults to first).
+---The window citations are shown in: Telescope's preview when docked, else the chat's own pane.
+local function preview_win(s)
+  local w = s.dock and s.dock.picker.preview_win or s.preview_win
+  return w and vim.api.nvim_win_is_valid(w) and w or nil
+end
+
+local PREVIEW_OPTS = { 'wrap', 'number', 'conceallevel', 'concealcursor' }
+
+local function set_preview_title(s, win, title)
+  if s.dock then
+    local p = s.dock.picker
+    local border = p.layout and p.layout.preview and p.layout.preview.border
+    if border then pcall(border.change_title, border, title) end
+    p.preview_title = title -- so Telescope sets its own title again when it previews a file
+  else
+    vim.api.nvim_win_set_config(win, { title = title, title_pos = 'center' })
+  end
+end
+
+---Hand Telescope's preview back to the picker's selected file, with its window options.
+local function give_back_preview(s)
+  local d = s.dock
+  if not (d and d.saved_wo) then return end
+  local w = d.picker.preview_win
+  if w and vim.api.nvim_win_is_valid(w) then
+    for k, v in pairs(d.saved_wo) do vim.wo[w][k] = v end
+    pcall(d.picker.refresh_previewer, d.picker)
+  end
+  d.saved_wo = nil
+  s.preview_path, s.preview_first, s.preview_buf = nil, nil, nil
+end
+
+---Show path in the preview with lines first..last highlighted (last defaults to first).
 function M.preview(path, first, last)
   local s = M.current
-  if not (is_open(s) and s.preview_win and vim.api.nvim_win_is_valid(s.preview_win)) then return end
+  if not is_open(s) then return end
+  local win = preview_win(s)
+  if not win then return end
+  if s.dock and not s.dock.saved_wo then
+    s.dock.saved_wo = {}
+    for _, k in ipairs(PREVIEW_OPTS) do s.dock.saved_wo[k] = vim.wo[win][k] end
+  end
   s.preview_path, s.preview_first = path, first
   local why, text = files.skip_reason(s.root, path, { exclude = s.config.exclude, max_bytes = s.config.max_bytes })
   local buf
   if why then
     buf = preview_message(s, path .. ': not shown (' .. why .. ')')
     s.preview_buf = buf
-    vim.api.nvim_win_set_buf(s.preview_win, buf)
-    vim.api.nvim_win_set_config(s.preview_win, { title = ' ' .. path .. ' ', title_pos = 'center' })
+    vim.api.nvim_win_set_buf(win, buf)
+    set_preview_title(s, win, ' ' .. path .. ' ')
     return
   end
   buf = preview_buffer(s, path, text)
   s.preview_buf = buf
-  vim.api.nvim_win_set_buf(s.preview_win, buf)
-  vim.wo[s.preview_win].wrap = false
-  vim.wo[s.preview_win].number = true
+  vim.api.nvim_win_set_buf(win, buf)
+  vim.wo[win].wrap = false
+  vim.wo[win].number = true
   if vim.b[buf].synopsis_markdown then
-    vim.wo[s.preview_win].conceallevel = 2
-    vim.wo[s.preview_win].concealcursor = 'nc'
+    vim.wo[win].conceallevel = 2
+    vim.wo[win].concealcursor = 'nc'
     markdown_render(s, buf)
   end
   local n = vim.api.nvim_buf_line_count(buf)
@@ -266,10 +307,10 @@ function M.preview(path, first, last)
   for row = first - 1, last - 1 do
     vim.api.nvim_buf_set_extmark(buf, ns_preview, row, 0, { line_hl_group = 'SynopsisCited', priority = 150 })
   end
-  vim.api.nvim_win_set_cursor(s.preview_win, { first, 0 })
-  vim.api.nvim_win_call(s.preview_win, function() vim.cmd 'normal! zz' end)
+  vim.api.nvim_win_set_cursor(win, { first, 0 })
+  vim.api.nvim_win_call(win, function() vim.cmd 'normal! zz' end)
   local range = last > first and string.format('%d–%d', first, last) or tostring(first)
-  vim.api.nvim_win_set_config(s.preview_win, { title = string.format(' %s:%s ', path, range), title_pos = 'center' })
+  set_preview_title(s, win, string.format(' %s:%s ', path, range))
 end
 
 ---Every citation in the conversation buffer, in order: { row (1-based), s, e, path, line, last }.
@@ -397,10 +438,34 @@ end
 
 ---Close the chat's windows. A question still being answered is cancelled; the conversation is
 ---kept for the next time the chat opens for this repo. on_close runs unless a file was opened.
-function M.close()
+---Docked beside a picker, the picker gets its full width and the focus back, unless
+---opts.picker (close the picker too, then focus opts.focus if given), opts.keep_dock (another
+---chat is about to take the column) or opts.picker_gone (the picker is closing already).
+function M.close(opts)
+  opts = opts or {}
   local s = M.current
   if not s or s.closed then return end
   s.closed = true
+  local dock = s.dock
+  if dock then
+    pcall(vim.api.nvim_del_augroup_by_name, 'synopsis.dock')
+    if not opts.picker_gone then give_back_preview(s) end
+    -- Our preview buffers are deleted below, which would close a window still showing one.
+    local w = dock.picker.preview_win
+    if w and vim.api.nvim_win_is_valid(w) then
+      local b = vim.api.nvim_win_get_buf(w)
+      for _, pb in pairs(s.preview_bufs or {}) do
+        if pb == b then
+          local empty = vim.api.nvim_create_buf(false, true)
+          vim.bo[empty].bufhidden = 'wipe'
+          vim.api.nvim_win_set_buf(w, empty)
+        end
+      end
+    end
+  end
+  local alive = dock and not opts.picker_gone and vim.api.nvim_buf_is_valid(dock.prompt) and dock.picker.prompt_win
+    and vim.api.nvim_win_is_valid(dock.picker.prompt_win)
+  if alive and not opts.picker and not opts.keep_dock then vim.api.nvim_set_current_win(dock.picker.prompt_win) end
   if s.queued then
     s.queued = nil
     s.pending = false
@@ -419,6 +484,17 @@ function M.close()
   end
   if s.preview_msg_buf and vim.api.nvim_buf_is_valid(s.preview_msg_buf) then pcall(vim.api.nvim_buf_delete, s.preview_msg_buf, { force = true }) end
   s.preview_win, s.preview_buf, s.preview_path, s.preview_msg_buf = nil, nil, nil, nil
+  if dock then
+    s.dock, s.on_close, s.jumped = nil, nil, false
+    if alive and opts.picker then
+      require('telescope.actions').close(dock.prompt)
+      if opts.focus and vim.api.nvim_win_is_valid(opts.focus) then vim.api.nvim_set_current_win(opts.focus) end
+    elseif alive and not opts.keep_dock then
+      require('synopsis.telescope').undock(dock.picker, dock.prompt)
+      vim.api.nvim_set_current_win(dock.picker.prompt_win)
+    end
+    return
+  end
   if s.origin and vim.api.nvim_win_is_valid(s.origin) then vim.api.nvim_set_current_win(s.origin) end
   local on_close = s.on_close
   s.on_close = nil
@@ -428,7 +504,7 @@ end
 
 jump = function(s, path, line)
   s.jumped = true
-  M.close()
+  M.close { picker = true }
   vim.cmd.edit(vim.fn.fnameescape(s.root .. '/' .. path))
   pcall(vim.api.nvim_win_set_cursor, 0, { line, 0 })
   vim.cmd 'normal! zz'
@@ -465,7 +541,7 @@ function M.locations()
   end
   local root = s.root
   s.jumped = true
-  M.close()
+  M.close { picker = true }
   local pickers, finders = require 'telescope.pickers', require 'telescope.finders'
   local conf = require('telescope.config').values
   pickers.new({ cwd = root }, {
@@ -530,10 +606,25 @@ local function geometry(config)
   return g
 end
 
+---Docked: the conversation and input fill the box the picker freed on its right.
+local function dock_geometry(box)
+  local input_h = 3
+  return { row = box.row, col = box.col, width = box.width - 2, input_h = input_h,
+    height = math.max(3, box.height - (input_h + 2) - 2) }
+end
+
+local function to_prompt(s)
+  if not (s.dock and s.dock.picker.prompt_win and vim.api.nvim_win_is_valid(s.dock.picker.prompt_win)) then return end
+  give_back_preview(s)
+  local insert = vim.api.nvim_get_mode().mode:sub(1, 1) == 'i'
+  vim.api.nvim_set_current_win(s.dock.picker.prompt_win)
+  if not insert then vim.cmd 'startinsert!' end
+end
+
 local function open_windows(s)
   local km = s.config.ask.keymaps or {}
   s.origin = vim.api.nvim_get_current_win()
-  local g = geometry(s.config)
+  local g = s.dock and dock_geometry(s.dock.picker._synopsis_dock) or geometry(s.config)
   local title = s.about and (' ' .. s.about.path .. ' ') or (' ' .. vim.fs.basename(s.root) .. ' ')
 
   s.buf = vim.api.nvim_create_buf(false, true)
@@ -547,7 +638,7 @@ local function open_windows(s)
     vim.wo[s.win][opt] = v
   end
 
-  if g.preview then
+  if g.preview and not s.dock then
     s.preview_win = vim.api.nvim_open_win(preview_message(s, 'Cited lines appear here; Tab moves between citations.'), false, {
       relative = 'editor', width = g.preview.width, height = g.preview.height, row = g.row, col = g.preview.col,
       style = 'minimal', border = 'rounded', title = ' Preview ', title_pos = 'center',
@@ -589,6 +680,10 @@ local function open_windows(s)
   map_keys(s.input_buf, { 'i', 'n' }, km.new_chat, M.new_chat, 'start a new chat')
   map_keys(s.input_buf, { 'i', 'n' }, '<C-c>', M.close, 'close the chat')
   map_keys(s.input_buf, 'n', 'q', M.close, 'close the chat')
+  if s.dock then
+    map_keys(s.buf, 'n', km.picker, function() to_prompt(s) end, 'go to the picker')
+    map_keys(s.input_buf, { 'i', 'n' }, km.picker, function() to_prompt(s) end, 'go to the picker')
+  end
 
   -- A session is reused when the chat reopens, so tie these to this opening of its windows.
   s.opening = (s.opening or 0) + 1
@@ -603,10 +698,51 @@ local function open_windows(s)
       })
     end
   end
+  if s.dock then
+    -- The picker no longer closes itself when its prompt loses the focus; moving to an ordinary
+    -- window closes both.
+    vim.api.nvim_create_autocmd('WinEnter', {
+      group = vim.api.nvim_create_augroup('synopsis.dock', { clear = true }),
+      callback = function()
+        vim.schedule(function()
+          if M.current ~= s or s.closed or s.opening ~= opening then return end
+          local w = vim.api.nvim_get_current_win()
+          if vim.api.nvim_win_get_config(w).relative == '' then M.close { picker = true, focus = w } end
+        end)
+      end,
+    })
+  end
+end
+
+---Move the docked chat to the box its picker now leaves free (after a resize).
+function M.relayout()
+  local s = M.current
+  if not (is_open(s) and s.dock and s.dock.picker._synopsis_dock) then return end
+  local g = dock_geometry(s.dock.picker._synopsis_dock)
+  vim.api.nvim_win_set_config(s.win, { relative = 'editor', row = g.row, col = g.col, width = g.width, height = g.height })
+  vim.api.nvim_win_set_config(s.input_win, { relative = 'editor', row = g.row + g.height + 2, col = g.col, width = g.width, height = g.input_h })
+end
+
+---Note a change of file in the conversation, and tell the model with the next question.
+local function note_about(s, about)
+  if not about or (s.about and s.about.path == about.path) then return end
+  if #s.items > 0 then table.insert(s.items, { kind = 'blank' }) end
+  table.insert(s.items, { kind = 'note', text = string.format('Now viewing `%s`', about.path) })
+  s.about, s.tell_about = about, about
+end
+
+---Move to the open chat's input panel, noting `about` if it is another file.
+function M.focus(about)
+  local s = M.current
+  if not is_open(s) then return end
+  note_about(s, about)
+  render(s)
+  to_input(s)
 end
 
 start = function(o)
-  if M.current and not M.current.closed then M.close() end
+  local cur = M.current
+  if cur and not cur.closed then M.close { keep_dock = o.dock ~= nil and cur.dock ~= nil and cur.dock.prompt == o.dock.prompt } end
   local s = M.sessions[o.root]
   if not s then
     s = { root = o.root, items = {}, tail = {}, pending = false }
@@ -614,12 +750,12 @@ start = function(o)
     local hint = o.about and string.format('Asking about `%s`', o.about.path) or ('Ask about ' .. vim.fs.basename(o.root))
     table.insert(s.items, { kind = 'hint', text = hint })
     s.about, s.tell_about = o.about, o.about
-  elseif o.about and (not s.about or s.about.path ~= o.about.path) then
-    if #s.items > 0 then table.insert(s.items, { kind = 'blank' }) end
-    table.insert(s.items, { kind = 'note', text = string.format('Now viewing `%s`', o.about.path) })
-    s.about, s.tell_about = o.about, o.about
+  else
+    note_about(s, o.about)
   end
   s.config, s.on_close, s.closed, s.jumped = o.config, o.on_close, false, false
+  s.dock = o.dock
+  if s.dock and not s.dock.picker._synopsis_side then require('synopsis.telescope').dock(s.dock.picker, s.dock.prompt) end
   M.current = s
   open_windows(s)
   render(s)

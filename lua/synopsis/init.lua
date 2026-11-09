@@ -46,19 +46,23 @@ local defaults = {
   -- turns of tool calls. Files past max_map_chars are listed by path only. render: draw the
   -- chat's markdown and LaTeX with markview.nvim and snacks.nvim when they are installed.
   -- preview: a pane on the right showing the cited lines, on screens at least
-  -- preview_min_columns wide. Each repo's conversation is kept for the editor session.
+  -- preview_min_columns wide. Each repo's conversation is kept for the editor session. Opened
+  -- with Ctrl-g on a screen at least side_min_columns wide, the chat sits beside the picker,
+  -- which stays open, and shows cited lines in Telescope's preview.
   -- Keys: close, open, locations, input, next_citation and prev_citation in the conversation;
-  -- chat and scroll_* in the input panel, where <CR> sends; new_chat in both; false for none.
+  -- chat and scroll_* in the input panel, where <CR> sends; new_chat in both, and picker (back to
+  -- the picker's prompt, when beside one); false for none.
   ask = {
     max_rounds = 10,
     max_map_chars = 150000,
     render = true,
     preview = true,
     preview_min_columns = 120,
+    side_min_columns = 180,
     keymaps = {
       close = { 'q', '<Esc>' }, open = '<CR>', locations = 'gl', input = { 'i', 'a', '<C-j>' },
       chat = '<C-k>', scroll_down = '<C-e>', scroll_up = '<C-y>', new_chat = '<C-n>',
-      next_citation = '<Tab>', prev_citation = '<S-Tab>',
+      next_citation = '<Tab>', prev_citation = '<S-Tab>', picker = '<C-g>',
     },
   },
 }
