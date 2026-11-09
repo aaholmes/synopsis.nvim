@@ -816,6 +816,12 @@ local function open_windows(s)
   end
   input_keys()
   map_keys(s.input_buf, 'n', km.close, M.close, 'close the chat')
+  -- Alt-arrows (Option-arrows on a Mac) move by words, as in other text fields. Unmapped, Neovim
+  -- reads Alt+key as Esc then the key, and Esc closes the chat.
+  map_keys(s.input_buf, 'i', '<M-Left>', '<C-Left>', 'move back a word')
+  map_keys(s.input_buf, 'i', '<M-Right>', '<C-Right>', 'move forward a word')
+  map_keys(s.input_buf, 'n', '<M-Left>', 'b', 'move back a word')
+  map_keys(s.input_buf, 'n', '<M-Right>', 'w', 'move forward a word')
   map_keys(s.input_buf, 'n', km.locations, M.locations, 'list the cited locations')
   -- Other plugins map keys in each buffer on InsertEnter (llama.vim its trigger, blink.cmp <C-n>
   -- and <Tab>), and llama.vim unmaps <Tab> and <S-Tab> on every cursor move in Insert mode; map

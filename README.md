@@ -136,6 +136,7 @@ In the chat's input panel:
 | `<CR>` | Send the question; with nothing typed, open the selected citation |
 | `<Tab>` / `<S-Tab>` | Select the next / previous citation |
 | `<C-x>` / `<C-v>` / `<C-t>` | Open the selected citation in a split / vertical split / tab |
+| `<M-Left>` / `<M-Right>` | Move back / forward a word (Option-arrows on a Mac) |
 | `<C-Space>` | Back to the picker |
 | `<C-n>` | Start a new conversation |
 | `<C-c>`, or `q` / `<Esc>` in Normal mode | Close the chat, cancelling a running answer |

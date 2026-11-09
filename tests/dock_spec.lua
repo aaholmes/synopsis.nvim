@@ -498,7 +498,7 @@ H.check('below side_min_columns, Ctrl-Space closes the picker and opens the chat
   close_all()
 end)
 
-H.check('typed Ctrl-Space from the prompt back to the chat lands in Insert mode, every time', function()
+H.check('typed Ctrl-Space from the prompt back to the chat lands in Insert mode, every time, and Alt-arrows move by words', function()
   -- Leaving a prompt buffer such as Telescope's ends Insert mode, which only typed keys show:
   -- drive a second Neovim through its RPC channel.
   local ch = vim.fn.jobstart({ vim.v.progpath, '--embed', '--headless', '-u', 'tests/minimal_init.lua' },
@@ -530,6 +530,17 @@ H.check('typed Ctrl-Space from the prompt back to the chat lands in Insert mode,
     H.eq(table.concat(where(), ' '), 'input i', 'round ' .. i)
     typed('<C-Space>', 'TelescopePrompt')
     H.eq(table.concat(where(), ' '), 'TelescopePrompt i', 'round ' .. i)
+  end
+  -- Option-arrows on a Mac: unmapped, Alt+key is Esc then the key, and Esc closes the chat.
+  typed('<C-Space>', 'input')
+  vim.rpcrequest(ch, 'nvim_input', 'hello world')
+  vim.wait(200)
+  local function col() return lua [[return vim.api.nvim_win_get_cursor(0)[2] ]] end
+  for _, step in ipairs { { '<M-Left>', 6 }, { '<M-Left>', 0 }, { '<M-Right>', 6 } } do
+    vim.rpcrequest(ch, 'nvim_input', step[1])
+    vim.wait(200)
+    H.eq(table.concat(where(), ' '), 'input i', step[1] .. ' keeps the chat and Insert mode')
+    H.eq(col(), step[2], step[1] .. ' moves a word')
   end
   vim.fn.jobstop(ch)
 end)
