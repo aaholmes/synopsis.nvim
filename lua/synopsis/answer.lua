@@ -252,7 +252,7 @@ local function preview_win(s)
   return w and vim.api.nvim_win_is_valid(w) and w or nil
 end
 
-local PREVIEW_OPTS = { 'wrap', 'number', 'conceallevel', 'concealcursor' }
+local PREVIEW_OPTS = { 'wrap', 'number', 'conceallevel', 'concealcursor', 'scrolloff' }
 
 local function set_preview_title(s, win, title)
   if s.dock then
@@ -303,6 +303,7 @@ function M.preview(path, first, last)
   vim.api.nvim_win_set_buf(win, buf)
   vim.wo[win].wrap = false
   vim.wo[win].number = true
+  vim.wo[win].scrolloff = 0 -- else a large scrolloff pulls the cited lines back towards the middle
   if vim.b[buf].synopsis_markdown then
     vim.wo[win].conceallevel = 2
     vim.wo[win].concealcursor = 'nc'
@@ -315,8 +316,8 @@ function M.preview(path, first, last)
   for row = first - 1, last - 1 do
     vim.api.nvim_buf_set_extmark(buf, ns_preview, row, 0, { line_hl_group = 'SynopsisCited', priority = 150 })
   end
-  vim.api.nvim_win_set_cursor(win, { first, 0 })
-  vim.api.nvim_win_call(win, function() vim.cmd 'normal! zz' end)
+  -- Near the top, with three lines of context above, so the cited lines have room below.
+  vim.api.nvim_win_call(win, function() vim.fn.winrestview { topline = math.max(1, first - 3), lnum = first, col = 0 } end)
   local range = last > first and string.format('%d–%d', first, last) or tostring(first)
   set_preview_title(s, win, string.format(' %s:%s ', path, range))
   if s.dock then
@@ -704,7 +705,7 @@ local function open_windows(s)
   local km = s.config.ask.keymaps or {}
   s.origin = vim.api.nvim_get_current_win()
   local g = s.dock and dock_geometry(s.dock.picker._synopsis_dock) or geometry(s.config)
-  local title = s.about and (' ' .. s.about.path .. ' ') or (' ' .. vim.fs.basename(s.root) .. ' ')
+  local title = ' ' .. vim.fs.basename(s.root) .. ' ' -- the chat is about the project
 
   s.buf = vim.api.nvim_create_buf(false, true)
   vim.bo[s.buf].bufhidden = 'wipe'

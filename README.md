@@ -139,16 +139,18 @@ paired over the same files or questions. Details are in `eval/*/RESULTS.md`.
   results clears the prompt so that it can be selected, which means the results then list
   every file rather than the last search. Telescope previews a file whenever its selection
   changes, so synopsis moves the selection with that preview switched off.
-- **One conversation per repo, not per file.** Questions asked while browsing usually build on
-  each other, so Ctrl-Space on a second file continues the chat, and the model is told the new
-  file once. A cancelled question is removed from the messages, because the API rejects a
+- **One conversation per project, not per file.** Questions asked while browsing usually build
+  on each other, so Ctrl-Space on a second file continues the chat, and the model is told the
+  new file once. The chat is titled with the project's name. Beside a picker, Ctrl-Space on any
+  file goes back to that picker's chat, even a file with another root, such as one in a nested
+  repo. A cancelled question is removed from the messages, because the API rejects a
   conversation that ends in an unanswered tool call.
 
 ## Current state
 
 Early. Both features work with Telescope's file and grep pickers and any OpenAI-compatible chat
 endpoint. Tested on macOS with Neovim 0.12.4 and Telescope commit `9377230`. GitHub Actions runs
-the 203 automated tests on Linux. The tests call the chat's mouse handler directly, since
+the 206 automated tests on Linux. The tests call the chat's mouse handler directly, since
 headless Neovim receives no real clicks.
 
 Known limitations:
@@ -234,8 +236,8 @@ The `:SynopsisAsk` chat has:
   ends with a muted line giving its tool calls, time and tokens. One link is selected and
   highlighted; each new answer selects its own first link.
 - **an input panel** below it, where the typing cursor stays. All the chat's keys work there.
-- **a preview** of the selected link, with the cited lines highlighted. Files that are never
-  sent (see `exclude`) are never shown.
+- **a preview** of the selected link, with the cited lines highlighted, three lines below the
+  top. Files that are never sent (see `exclude`) are never shown.
 
 Opened from Telescope on a screen at least 180 columns wide, the chat takes a column to the
 right of the picker and uses Telescope's preview and border colours. The selected link's file

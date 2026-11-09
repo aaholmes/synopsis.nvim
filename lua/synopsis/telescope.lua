@@ -189,8 +189,13 @@ function M.ask_about(prompt, picker)
   local answer = require 'synopsis.answer'
   local about = { path = rel, line = entry.lnum }
   if picker._synopsis and vim.o.columns >= ((config.ask or {}).side_min_columns or 180) then
+    -- The chat beside this picker is about the project it was opened in: any file, even one of
+    -- a nested repo, goes back to it, noted only when it is inside that project.
     local s = answer.current
-    if s and not s.closed and s.dock and s.dock.prompt == prompt and s.root == root then return answer.focus(about) end
+    if s and not s.closed and s.dock and s.dock.prompt == prompt then
+      local inside = vim.fs.relpath(s.root, name)
+      return answer.focus(inside and { path = inside, line = entry.lnum } or nil)
+    end
     return answer.open { root = root, config = config, about = about, dock = { prompt = prompt, picker = picker } }
   end
   require('telescope.actions').close(prompt)

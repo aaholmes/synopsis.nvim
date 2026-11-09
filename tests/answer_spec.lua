@@ -476,6 +476,37 @@ H.check("an answer's first citation is previewed with its lines highlighted", fu
   H.eq(vim.api.nvim_win_get_cursor(cur().preview_win)[1], 2, 'cursor')
 end)
 
+H.check('a citation is shown near the top of the preview, with three lines above it', function()
+  reset()
+  local so = vim.o.scrolloff
+  vim.o.scrolloff = 10 -- as kickstart sets it
+  local lines = {}
+  for i = 1, 200 do lines[i] = 'line ' .. i end
+  vim.fn.writefile(lines, repo .. '/long.txt')
+  local server = mock.start 'See long.txt:100.'
+  answer.open { root = repo, question = 'Q?', config = config(server) }
+  vim.wait(3000, idle, 10)
+  H.eq(cur().preview_path, 'long.txt', 'previewed')
+  local top = vim.api.nvim_win_call(cur().preview_win, function() return vim.fn.line 'w0' end)
+  H.eq(top, 97, 'top line')
+  H.eq(vim.api.nvim_win_get_cursor(cur().preview_win)[1], 100, 'cursor on the cited line')
+  answer.preview('long.txt', 2)
+  top = vim.api.nvim_win_call(cur().preview_win, function() return vim.fn.line 'w0' end)
+  H.eq(top, 1, 'near the start, from the first line')
+  reset()
+  vim.o.scrolloff = so
+  vim.fn.delete(repo .. '/long.txt')
+end)
+
+H.check("the chat's title names the project, not the file it was opened on", function()
+  reset()
+  local server = mock.start 'ok'
+  answer.open { root = repo, config = config(server), about = { path = 'a.lua' } }
+  local title = vim.api.nvim_win_get_config(cur().win).title
+  H.eq(vim.trim(title[1][1]), vim.fs.basename(repo), 'title')
+  reset()
+end)
+
 ---The text the conversation highlights as the selected link.
 local function selected_link()
   local ns = vim.api.nvim_get_namespaces()['synopsis.link']

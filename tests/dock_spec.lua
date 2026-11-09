@@ -458,6 +458,28 @@ H.check('a cited file missing from the results clears the prompt, then is select
   close_all()
 end)
 
+H.check('Ctrl-Space returns to the chat beside the picker even on a file of another repo', function()
+  -- A nested repo: its files have another root, which would otherwise start another chat.
+  vim.fn.mkdir(root .. '/zz/.git', 'p')
+  vim.fn.writefile({ 'return 3' }, root .. '/zz/c.lua')
+  close_all()
+  open_picker()
+  ctrl_space()
+  ask 'First?'
+  local s = cur()
+  press(cur().input_buf, 'i', '<C-Space>')
+  picker():set_prompt 'zz'
+  vim.wait(1000, function() return selected_name() == 'c.lua' end, 10)
+  H.eq(selected_name(), 'c.lua', 'the nested file selected')
+  ctrl_space()
+  H.eq(cur(), s, 'the same chat')
+  H.eq(vim.api.nvim_get_current_win(), s.input_win, 'focus in its input')
+  H.eq(chat_text():find('First?', 1, true) ~= nil, true, 'conversation kept')
+  H.eq(chat_text():find('Now viewing `zz/c.lua`', 1, true) ~= nil, true, chat_text())
+  close_all()
+  vim.fn.delete(root .. '/zz', 'rf')
+end)
+
 H.check('below side_min_columns, Ctrl-Space closes the picker and opens the chat on its own', function()
   close_all()
   vim.o.columns = 160
