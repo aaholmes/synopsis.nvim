@@ -178,6 +178,9 @@ H.check('going back to the prompt keeps the citation in the preview, and its fil
   H.eq(vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1], 'return "b"', 'b.lua still shown')
   H.eq(rows[1], true, 'its cited line still highlighted')
   H.eq(selected_name(), 'b.lua', 'b.lua still selected')
+  local w = picker().preview_win
+  H.eq(vim.wo[w].wrap, true, 'the citation wraps')
+  H.eq(vim.wo[w].linebreak, true, 'at words')
 end)
 
 H.check("moving the selection in the picker shows Telescope's preview of that file, with its window options", function()
@@ -192,6 +195,7 @@ H.check("moving the selection in the picker shows Telescope's preview of that fi
   H.eq(next(rows), nil, 'no cited lines')
   H.eq(vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1], want, 'the selected file ' .. selected_name())
   H.eq(vim.wo[w].number, false, "Telescope's window options back")
+  H.eq(vim.wo[w].linebreak, false, "Telescope's linebreak back")
 end)
 
 H.check('Ctrl-Space on another file continues the chat, noting the new file once', function()

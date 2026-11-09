@@ -252,7 +252,7 @@ local function preview_win(s)
   return w and vim.api.nvim_win_is_valid(w) and w or nil
 end
 
-local PREVIEW_OPTS = { 'wrap', 'number', 'conceallevel', 'concealcursor', 'scrolloff' }
+local PREVIEW_OPTS = { 'wrap', 'linebreak', 'number', 'conceallevel', 'concealcursor', 'scrolloff' }
 
 local function set_preview_title(s, win, title)
   if s.dock then
@@ -338,7 +338,7 @@ function M.preview(path, first, last)
   buf = preview_buffer(s, path, text)
   s.preview_buf = buf
   vim.api.nvim_win_set_buf(win, buf)
-  vim.wo[win].wrap = false
+  vim.wo[win].wrap, vim.wo[win].linebreak = true, true
   vim.wo[win].number = true
   vim.wo[win].scrolloff = 0 -- else a large scrolloff pulls the cited lines back towards the middle
   if vim.b[buf].synopsis_markdown then
